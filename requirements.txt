@@ -1,0 +1,29 @@
+# IQOption AI Trading Bot - Python Dependencies
+
+# Web Framework
+flask==3.0.0
+werkzeug==3.0.1
+
+# IQOption API
+# Note: Install from local folder
+# pip install -e ./src/iqoptionapi
+
+# HTTP Requests
+requests==2.31.0
+
+# Data Processing
+python-dateutil==2.8.2
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-flask==1.3.0
+
+# Development
+python-dotenv==1.0.0
+black==23.12.1
+flake8==7.0.0
+mypy==1.8.0
+
+# Production Server
+gunicorn==21.2.0

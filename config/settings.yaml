@@ -1,0 +1,31 @@
+# IQOption AI Trading Bot Configuration
+
+# Risk Management
+risk:
+  max_daily_loss: 50.0
+  max_daily_profit: 100.0
+  max_consecutive_losses: 3
+  min_balance: 50.0
+
+# Martingale Strategy
+martingale:
+  multiplier: 1.5
+  max_level: 4
+
+# Trading Parameters
+trading:
+  min_confidence_threshold: 60
+  base_trade_amount: 1.0
+  max_trade_multiplier: 5.0
+
+# API Settings
+api:
+  host: '0.0.0.0'
+  port: 5000
+  debug: false
+
+# Logging
+logging:
+  level: 'INFO'  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: '[%(asctime)s] [%(levelname)s] %(message)s'
+  date_format: '%Y-%m-%d %H:%M:%S'

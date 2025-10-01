@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.secret
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# n8n
+n8n-nodes-trading/node_modules/
+n8n-nodes-trading/dist/
+*.tgz
+
+# Documentation
+docs/_build/
+
+# Temporary
+*.tmp
+temp/
+.cache/
+
+# Backups
+*.backup
+*.bak
+
+# Database (if added later)
+*.db
+*.sqlite
+*.sqlite3

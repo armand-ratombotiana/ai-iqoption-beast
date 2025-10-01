@@ -4,7 +4,7 @@
  * Simulates n8n node execution
  */
 
-const { Trading } = require('./n8n/nodes/iqoption-trading/nodes/Trading/Trading.node.js');
+const { Trading } = require('../n8n/nodes/iqoption-trading/nodes/Trading/Trading.node.js');
 
 console.log('='.repeat(70));
 console.log('  N8N TRADING NODE - EXECUTION TESTS');

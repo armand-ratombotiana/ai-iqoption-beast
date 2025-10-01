@@ -1,0 +1,158 @@
+{
+  "name": "IQOption AI Binary BOT – Fully Improved Production",
+  "nodes": [
+    {
+      "parameters": {
+        "functionCode": "return [\n  {asset: 'EUR/USD'},\n  {asset: 'GBP/USD'},\n  {asset: 'USD/JPY'},\n  {asset: 'BTC/USD'},\n  {asset: 'ETH/USD'}\n];"
+      },
+      "id": "1",
+      "name": "Asset Selector",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "prompt": "Analyze {{$json.asset}} for next 1–5 minutes. Respond ONLY with JSON: {\"signal\": \"CALL\" | \"PUT\", \"confidence\": 0-100, \"asset\": \"{{$json.asset}}\"}."
+      },
+      "id": "2",
+      "name": "AI Signal Generator (Primary)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [450, 150]
+    },
+    {
+      "parameters": {
+        "model": "claude-3-haiku",
+        "prompt": "Validate trade signal for {{$json.asset}}. Respond ONLY with JSON: {\"signal\": \"CALL\" | \"PUT\", \"confidence\": 0-100, \"asset\": \"{{$json.asset}}\"}."
+      },
+      "id": "3",
+      "name": "AI Signal Generator (Backup)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [450, 450]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByIndex",
+        "join": "keepKeyMatches"
+      },
+      "id": "4",
+      "name": "Merge AI Outputs",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate AI signal and ensure CALL or PUT\nconst s = $json.signal?.toUpperCase();\nconst confidence = $json.confidence || 50;\nif (s !== 'CALL' && s !== 'PUT') return [{signal:'INVALID', confidence:0, asset:$json.asset}];\nreturn [{signal: s, confidence: confidence, asset: $json.asset || 'EUR/USD'}];"
+      },
+      "id": "5",
+      "name": "Validate Signal",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Risk Guard Node\nconst dailyLoss = parseFloat($env.DAILY_LOSS || 0);\nconst dailyProfit = parseFloat($env.DAILY_PROFIT || 0);\nconst maxDailyLoss = parseFloat($env.MAX_DAILY_LOSS || 50);\nconst maxDailyProfit = parseFloat($env.MAX_DAILY_PROFIT || 100);\nconst balance = parseFloat($env.ACCOUNT_BALANCE || 1000);\nconst consecutiveLosses = parseInt($json.consecutiveLosses || 0);\nconst maxConsecutiveLosses = parseInt($env.MAX_CONSECUTIVE_LOSSES || 3);\n\nif(balance < 50 || dailyLoss >= maxDailyLoss || dailyProfit >= maxDailyProfit || consecutiveLosses >= maxConsecutiveLosses){\n  return [{tradeAllowed:false, reason:'Risk Guard triggered'}];\n}\nreturn [{tradeAllowed:true}];"
+      },
+      "id": "6",
+      "name": "Risk Guard",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [{"value1": "={{$json.tradeAllowed}}","operation":"equal","value2": true}]
+        }
+      },
+      "id": "7",
+      "name": "IF: Trade Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Dynamic Trade Sizing + Martingale\nconst baseAmount = parseFloat($env.TRADE_AMOUNT || 0.02 * ($env.ACCOUNT_BALANCE || 1000));\nconst martingaleLevel = parseInt($json.martingaleLevel || 0);\nconst tradeAmount = Math.min(baseAmount * Math.pow(1.5, martingaleLevel) * ($json.confidence/100), baseAmount*5);\nconst expiration = Math.min(Math.max(Math.ceil(($json.confidence/50)*3),1),5);\nreturn [{...$json, amount: tradeAmount, expiration: expiration, martingaleLevel: martingaleLevel}];"
+      },
+      "id": "8",
+      "name": "Dynamic Trade Sizing + Martingale",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://iqoption.com/api/trade",
+        "method": "POST",
+        "authentication": "headerAuth",
+        "bodyParametersJson": "={\"instrument\": \"{{$json.asset}}\", \"direction\": \"call\", \"amount\": {{$json.amount}}, \"expiration\": {{$json.expiration}}}"
+      },
+      "id": "9",
+      "name": "IQOption Trade: CALL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1650, 150],
+      "credentials": {"httpHeaderAuth": {"id": "iqoption-api-key","name": "IQOption API"}}
+    },
+    {
+      "parameters": {
+        "url": "https://iqoption.com/api/trade",
+        "method": "POST",
+        "authentication": "headerAuth",
+        "bodyParametersJson": "={\"instrument\": \"{{$json.asset}}\", \"direction\": \"put\", \"amount\": {{$json.amount}}, \"expiration\": {{$json.expiration}}}"
+      },
+      "id": "10",
+      "name": "IQOption Trade: PUT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1650, 450],
+      "credentials": {"httpHeaderAuth": {"id": "iqoption-api-key","name": "IQOption API"}}
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "your-google-sheet-id",
+        "range": "Trades!A:J",
+        "valueInputMode": "RAW",
+        "data": "={{[$json.asset, $json.signal, $json.confidence, $json.amount, $json.expiration, $json.martingaleLevel, new Date().toISOString(), $json.result || 'Pending', $json.apiResponse || '', $json.reason || '']}}"
+      },
+      "id": "11",
+      "name": "Log Trade",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [1850, 300],
+      "credentials": {"googleSheetsOAuth2Api": {"id": "google-sheets-cred","name": "Google Sheets"}}
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId || '123456789'}}",
+        "text": "📊 Trade Executed: {{$json.asset}} {{$json.signal}} | Confidence: {{$json.confidence}}% | Amount: {{$json.amount}} | Expiration: {{$json.expiration}}m | Martingale Level: {{$json.martingaleLevel}} | Status: {{$json.result || 'Pending'}} | Reason: {{$json.reason || 'OK'}}"
+      },
+      "id": "12",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2050, 300],
+      "credentials": {"telegramApi": {"id": "telegram-bot-token","name": "Telegram Bot"}}
+    }
+  ],
+  "connections": {
+    "Asset Selector":{"main":[[{"node":"AI Signal Generator (Primary)","type":"main","index":0}],[{"node":"AI Signal Generator (Backup)","type":"main","index":0}]]},
+    "AI Signal Generator (Primary)":{"main":[[{"node":"Merge AI Outputs","type":"main","index":0}]]},
+    "AI Signal Generator (Backup)":{"main":[[{"node":"Merge AI Outputs","type":"main","index":1}]]},
+    "Merge AI Outputs":{"main":[[{"node":"Validate Signal","type":"main","index":0}]]},
+    "Validate Signal":{"main":[[{"node":"Risk Guard","type":"main","index":0}]]},
+    "Risk Guard":{"main":[[{"node":"IF: Trade Allowed?","type":"main","index":0}]]},
+    "IF: Trade Allowed?":{"main":[[{"node":"Dynamic Trade Sizing + Martingale","type":"main","index":0}]]},
+    "Dynamic Trade Sizing + Martingale":{"main":[[{"node":"IQOption Trade: CALL","type":"main","index":0}],[{"node":"IQOption Trade: PUT","type":"main","index":0}]]},
+    "IQOption Trade: CALL":{"main":[[{"node":"Log Trade","type":"main","index":0}]]},
+    "IQOption Trade: PUT":{"main":[[{"node":"Log Trade","type":"main","index":0}]]},
+    "Log Trade":{"main":[[{"node":"Telegram Alert","type":"main","index":0}]]}
+  }
+}

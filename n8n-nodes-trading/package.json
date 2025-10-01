@@ -1,0 +1,24 @@
+{
+  "name": "n8n-nodes-trading",
+  "version": "1.0.0",
+  "description": "n8n node for IQ Option trading - Put/Call execution",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "trading"
+  ],
+  "n8n": {
+    "nodes": [
+      "nodes/Trading/Trading.node.js"
+    ]
+  },
+  "author": "KAEL",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}

@@ -1,0 +1,86 @@
+COMPLETE PROJECT REORGANIZATION PLAN
+=====================================
+
+NEW STRUCTURE:
+--------------
+advanced_trading_system/
+├── README.md                          # Main documentation
+├── LICENSE                            # License file
+├── .gitignore                         # Git ignore
+├── .env.example                       # Environment template
+├── requirements.txt                   # Production dependencies
+├── setup.py                           # Package setup
+├── Dockerfile                         # Docker image
+├── docker-compose.yml                 # Docker orchestration
+│
+├── src/                               # Source code
+│   ├── __init__.py
+│   ├── trading/                       # Core trading logic
+│   │   ├── __init__.py
+│   │   ├── engine.py                  # Main trading engine
+│   │   ├── signal_generator.py        # Signal generation
+│   │   ├── risk_manager.py            # Risk management
+│   │   └── executor.py                # Trade execution
+│   ├── api/                           # REST API
+│   │   ├── __init__.py
+│   │   ├── main.py                    # FastAPI app
+│   │   ├── routes.py                  # API routes
+│   │   └── models.py                  # Pydantic models
+│   ├── data/                          # Data providers
+│   │   ├── __init__.py
+│   │   └── iqoption_provider.py       # IQOption API wrapper
+│   ├── analysis/                      # Analysis modules
+│   │   ├── __init__.py
+│   │   ├── technical.py               # Technical analysis
+│   │   └── market_context.py          # Market context
+│   ├── ai/                            # AI models
+│   │   ├── __init__.py
+│   │   └── models/                    # AI model implementations
+│   ├── database/                      # Database operations
+│   │   ├── __init__.py
+│   │   └── trade_storage.py           # Trade storage
+│   └── utils/                         # Utilities
+│       ├── __init__.py
+│       ├── logger.py                  # Logging utilities
+│       └── helpers.py                 # Helper functions
+│
+├── config/                            # Configuration
+│   ├── __init__.py
+│   └── settings.py                    # All settings
+│
+├── scripts/                           # Utility scripts
+│   ├── run_trading.py                 # Main trading script
+│   ├── run_api.py                     # API server
+│   └── backtest.py                    # Backtesting
+│
+├── tests/                             # All tests
+│   ├── __init__.py
+│   ├── unit/                          # Unit tests
+│   ├── integration/                   # Integration tests
+│   └── fixtures/                      # Test fixtures
+│
+├── docs/                              # Documentation
+│   ├── README.md                      # Docs index
+│   ├── QUICK_START.md                 # Quick start
+│   ├── API_REFERENCE.md               # API docs
+│   ├── DEPLOYMENT.md                  # Deployment guide
+│   ├── TESTING.md                     # Testing guide
+│   ├── architecture/                  # Architecture docs
+│   └── reports/                       # Test reports
+│
+├── data/                              # Data files (gitignored)
+│   └── .gitkeep
+│
+└── logs/                              # Log files (gitignored)
+    └── .gitkeep
+
+ACTIONS:
+--------
+1. Create new structure
+2. Move source files to src/
+3. Consolidate configs to config/
+4. Move docs to docs/
+5. Archive old files
+6. Update all imports
+7. Create new main entry point
+8. Test everything

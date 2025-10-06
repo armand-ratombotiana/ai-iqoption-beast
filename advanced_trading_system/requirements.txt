@@ -1,0 +1,23 @@
+# Advanced Binary Options Trading System
+# Requirements
+
+# Core dependencies
+numpy>=1.24.0
+requests>=2.31.0
+
+# Database (SQLite is built-in to Python)
+
+# Optional: For better technical analysis
+# ta-lib  # Uncomment if you want advanced TA library
+
+# Optional: For data export
+# pandas>=2.0.0
+# matplotlib>=3.7.0
+
+# IQ Option API (should be already available)
+# Located in /app/app/KAEL/KAEL/src/iqoptionapi
+
+# API Keys (set as environment variables):
+# - OPENAI_API_KEY
+# - ANTHROPIC_API_KEY
+# - DEEPSEEK_API_KEY

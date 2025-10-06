@@ -1,0 +1,134 @@
+{
+  "generated": "2025-10-06T04:14:55.378916",
+  "period_days": 30,
+  "statistics": {
+    "overall": {
+      "total_trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "total_profit": -20.0,
+      "avg_profit": -20.0,
+      "max_profit": -20.0,
+      "max_loss": -20.0,
+      "avg_confidence": 66.0,
+      "win_rate": 0.0
+    },
+    "by_hour": [
+      {
+        "hour_of_day": null,
+        "trades": 1,
+        "wins": 0,
+        "avg_profit": -20.0
+      }
+    ],
+    "by_pair": [
+      {
+        "pair": "AUDCHF-OTC",
+        "trades": 1,
+        "wins": 0,
+        "avg_profit": -20.0,
+        "total_profit": -20.0
+      }
+    ],
+    "by_trend": [
+      {
+        "trend": "downtrend",
+        "trades": 1,
+        "wins": 0,
+        "avg_profit": -20.0
+      }
+    ],
+    "by_regime": [
+      {
+        "regime": "bear",
+        "trades": 1,
+        "wins": 0,
+        "avg_profit": -20.0
+      }
+    ],
+    "sharpe_ratio": 0
+  },
+  "model_comparison": {
+    "models": [
+      {
+        "model": "openai-gpt-4o-mini",
+        "predictions": 1,
+        "correct": 0,
+        "accuracy": 0.0,
+        "total_profit": 0,
+        "avg_profit": 0.0,
+        "regime_performance": {
+          "bear": {
+            "accuracy": 0.0,
+            "predictions": 1
+          }
+        }
+      },
+      {
+        "model": "claude-claude-3-5-haiku-20241022",
+        "predictions": 1,
+        "correct": 0,
+        "accuracy": 0.0,
+        "total_profit": 0,
+        "avg_profit": 0.0,
+        "regime_performance": {
+          "bear": {
+            "accuracy": 0.0,
+            "predictions": 1
+          }
+        }
+      },
+      {
+        "model": "deepseek-deepseek-chat",
+        "predictions": 1,
+        "correct": 0,
+        "accuracy": 0.0,
+        "total_profit": 0,
+        "avg_profit": 0.0,
+        "regime_performance": {
+          "bear": {
+            "accuracy": 0.0,
+            "predictions": 1
+          }
+        }
+      },
+      {
+        "model": "lstm-predictor",
+        "predictions": 1,
+        "correct": 0,
+        "accuracy": 0.0,
+        "total_profit": 0,
+        "avg_profit": 0.0,
+        "regime_performance": {
+          "bear": {
+            "accuracy": 0.0,
+            "predictions": 1
+          }
+        }
+      },
+      {
+        "model": "xgboost-ensemble",
+        "predictions": 1,
+        "correct": 0,
+        "accuracy": 0.0,
+        "total_profit": 0,
+        "avg_profit": 0.0,
+        "regime_performance": {
+          "bear": {
+            "accuracy": 0.0,
+            "predictions": 1
+          }
+        }
+      }
+    ],
+    "best_model": "openai-gpt-4o-mini",
+    "best_accuracy": 0.0
+  },
+  "winning_patterns": [],
+  "drawdown_analysis": {
+    "max_drawdown": 20.0,
+    "max_drawdown_pct": 0,
+    "current_drawdown": 20.0,
+    "peak_equity": 0
+  }
+}

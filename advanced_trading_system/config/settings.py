@@ -3,6 +3,16 @@ Trading Configuration Settings
 Centralized configuration for the trading system
 """
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file if it exists
+env_path = Path(__file__).parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    # Try loading from current directory
+    load_dotenv()
 
 
 class TradingConfig:
@@ -19,18 +29,21 @@ class TradingConfig:
     # ========================================================================
     # AI Model Settings
     # ========================================================================
-    USE_OPENAI = os.getenv('USE_OPENAI', 'true').lower() == 'true'
-    USE_CLAUDE = os.getenv('USE_CLAUDE', 'true').lower() == 'true'
-    USE_DEEPSEEK = os.getenv('USE_DEEPSEEK', 'true').lower() == 'true'
+    USE_OPENAI = os.getenv('USE_OPENAI', 'false').lower() == 'true'
+    USE_CLAUDE = os.getenv('USE_CLAUDE', 'false').lower() == 'true'
+    USE_DEEPSEEK = os.getenv('USE_DEEPSEEK', 'false').lower() == 'true'
+    USE_FREE_AI = os.getenv('USE_FREE_AI', 'true').lower() == 'true'  # FREE AI enabled by default
 
     OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
     CLAUDE_MODEL = os.getenv('CLAUDE_MODEL', 'claude-3-5-haiku-20241022')
     DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')
+    FREE_AI_TYPE = os.getenv('FREE_AI_TYPE', 'rule-based')  # 'rule-based' or 'huggingface'
 
     # AI Model Weights (can be adjusted based on performance)
     OPENAI_WEIGHT = float(os.getenv('OPENAI_WEIGHT', '1.2'))
     CLAUDE_WEIGHT = float(os.getenv('CLAUDE_WEIGHT', '1.0'))
     DEEPSEEK_WEIGHT = float(os.getenv('DEEPSEEK_WEIGHT', '1.0'))
+    FREE_AI_WEIGHT = float(os.getenv('FREE_AI_WEIGHT', '1.5'))  # Higher weight for free AI
 
     # ========================================================================
     # Consensus Settings

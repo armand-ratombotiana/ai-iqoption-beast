@@ -4,6 +4,11 @@
 # Core dependencies
 numpy>=1.24.0
 requests>=2.31.0
+python-dotenv>=1.0.0
+
+# AI Model SDKs
+anthropic>=0.69.0      # Official Anthropic/Claude SDK
+openai>=1.0.0         # OpenAI SDK (optional)
 
 # Database (SQLite is built-in to Python)
 
@@ -14,10 +19,13 @@ requests>=2.31.0
 # pandas>=2.0.0
 # matplotlib>=3.7.0
 
-# IQ Option API (should be already available)
+# IQ Option API
 # Located in /app/app/KAEL/KAEL/src/iqoptionapi
+# Should be available in parent directory
 
-# API Keys (set as environment variables):
-# - OPENAI_API_KEY
-# - ANTHROPIC_API_KEY
-# - DEEPSEEK_API_KEY
+# API Keys (set in .env file or as environment variables):
+# - IQOPTION_EMAIL
+# - IQOPTION_PASSWORD
+# - ANTHROPIC_API_KEY (for Claude)
+# - OPENAI_API_KEY (optional)
+# - DEEPSEEK_API_KEY (optional)

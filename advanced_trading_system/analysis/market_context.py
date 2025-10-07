@@ -24,9 +24,8 @@ class MarketContextAnalyzer:
         Returns dictionary with 20+ technical indicators and market conditions
         """
         try:
-            # Get candles
-            current_time = int(time.time())
-            candles = api.get_candles(pair, timeframe, candle_count, current_time)
+            # Get candles using realtime stream method
+            candles = self._get_candles_safe(api, pair, timeframe, candle_count)
 
             if not candles or len(candles) < 20:
                 print(f"⚠️  Insufficient candle data for {pair}")
@@ -158,9 +157,8 @@ class MarketContextAnalyzer:
             print(f"\n⏳ Waiting {expiration} minutes for trade expiration...")
             time.sleep(wait_time)
 
-            # Get candles during trade period
-            current_time = int(time.time())
-            candles = api.get_candles(pair, '1m', expiration + 5, current_time)
+            # Get candles during trade period using safe method
+            candles = self._get_candles_safe(api, pair, '1m', expiration + 5)
 
             if not candles or len(candles) < expiration:
                 print(f"⚠️  Insufficient post-trade candle data")
@@ -296,3 +294,51 @@ class MarketContextAnalyzer:
             'actual_direction': 'UNKNOWN',
             'error': 'Insufficient data'
         }
+
+    def _get_candles_safe(self, api, pair: str, timeframe: str = '1m', count: int = 100) -> List[Dict]:
+        """
+        Safely get candles using realtime stream method
+        Converts timeframe to seconds (1m = 60)
+        """
+        try:
+            # Convert timeframe to seconds
+            timeframe_map = {
+                '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
+                '1h': 3600, '4h': 14400, '1d': 86400
+            }
+            timeframe_seconds = timeframe_map.get(timeframe, 60)
+
+            # Remove -OTC suffix if present for candle streaming
+            clean_pair = pair.replace('-OTC', '')
+
+            # Start candles stream
+            api.start_candles_stream(clean_pair, timeframe_seconds, count)
+            time.sleep(3)  # Wait for data
+
+            # Get realtime candles
+            candles_dict = api.get_realtime_candles(clean_pair, timeframe_seconds)
+
+            # Stop stream
+            api.stop_candles_stream(clean_pair, timeframe_seconds)
+
+            if not candles_dict:
+                return []
+
+            # Convert to list format expected by indicators
+            candles = []
+            for timestamp in sorted(candles_dict.keys()):
+                candle = candles_dict[timestamp]
+                candles.append({
+                    'time': timestamp,
+                    'open': candle['open'],
+                    'high': candle['max'],
+                    'low': candle['min'],
+                    'close': candle['close'],
+                    'volume': candle.get('volume', 0)
+                })
+
+            return candles[-count:]  # Return only requested count
+
+        except Exception as e:
+            print(f"⚠️  Error getting candles: {e}")
+            return []

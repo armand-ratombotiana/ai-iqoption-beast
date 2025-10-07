@@ -13,13 +13,20 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add parent directories to path to access modules
+current_dir = Path(__file__).parent
+src_dir = current_dir.parent
+project_root = src_dir.parent
+sys.path.insert(0, str(src_dir))
+sys.path.insert(0, str(project_root))
 
 from iqoptionapi.stable_api import IQ_Option
 from database.trade_storage import TradeDatabase
 from analysis.market_context import MarketContextAnalyzer
-from ai_models import OpenAIModel, ClaudeModel, DeepSeekModel, AIConsensusEngine
+from ai_models.openai_model import OpenAIModel
+from ai_models.claude_model import ClaudeModel
+from ai_models.deepseek_model import DeepSeekModel
+from ai_models.consensus_engine import AIConsensusEngine
 from config.settings import TradingConfig
 
 

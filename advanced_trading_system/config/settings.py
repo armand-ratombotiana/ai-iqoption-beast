@@ -137,6 +137,7 @@ class TradingConfig:
         print(f"   Email: {cls.EMAIL}")
 
         print(f"\n🤖 AI Models:")
+        print(f"   Free AI: {'✅' if cls.USE_FREE_AI else '❌'} (weight: {cls.FREE_AI_WEIGHT}) - {cls.FREE_AI_TYPE}")
         print(f"   OpenAI: {'✅' if cls.USE_OPENAI else '❌'} (weight: {cls.OPENAI_WEIGHT})")
         print(f"   Claude: {'✅' if cls.USE_CLAUDE else '❌'} (weight: {cls.CLAUDE_WEIGHT})")
         print(f"   DeepSeek: {'✅' if cls.USE_DEEPSEEK else '❌'} (weight: {cls.DEEPSEEK_WEIGHT})")

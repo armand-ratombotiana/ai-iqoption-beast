@@ -45,7 +45,7 @@ services:
       - ./logs:/app/logs
       # Persist database
       - ./database:/app/database
-      # Mount .env file
+      # Mount .env file (if exists)
       - ./.env:/app/.env:ro
 
     networks:

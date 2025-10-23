@@ -1,0 +1,299 @@
+{
+  "name": "AI_Consensus_Engine",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "market_data",
+              "name": "asset",
+              "value": "={{ $json.asset || $env.N8N_TRADE_ASSET || 'EURUSD' }}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "market_context",
+              "name": "market_context",
+              "value": "={{ $json.market_context ||    }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "prepare-context",
+      "name": "Prepare Market Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an expert binary options trading analyst. Analyze the market data and provide a trading signal. Respond ONLY with a valid JSON object in this exact format:\n{\n  \"signal\": \"CALL\" or \"PUT\" or \"SKIP\",\n  \"confidence\": 0-100,\n  \"reasoning\": \"brief explanation\"\n}\nBe decisive. Only use SKIP if market conditions are extremely unclear."
+            },
+            {
+              "role": "user",
+              "content": "=Analyze {{ $json.asset }} at {{ $json.timestamp }}. Market context: {{ $json.market_context }}\n\nProvide your trading signal in JSON format."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 200
+        }
+      },
+      "id": "openai-analysis",
+      "name": "OpenAI Analysis",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [640, 180],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "model": "claude-3-5-sonnet-20241022",
+        "prompt": "=You are an expert binary options trading analyst. Analyze the market data and provide a trading signal.\n\nAsset: {{ $json.asset }}\nTimestamp: {{ $json.timestamp }}\nMarket Context: {{ $json.market_context }}\n\nRespond ONLY with a valid JSON object in this exact format:\n{\n  \"signal\": \"CALL\" or \"PUT\" or \"SKIP\",\n  \"confidence\": 0-100,\n  \"reasoning\": \"brief explanation\"\n}\n\nBe decisive. Only use SKIP if market conditions are extremely unclear.",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 200
+        }
+      },
+      "id": "claude-analysis",
+      "name": "Claude Analysis",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [640, 300],
+      "credentials": {
+        "anthropicApi": {
+          "id": "claude-credentials",
+          "name": "Anthropic Claude API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "deepseek-chat"
+            },
+            {
+              "name": "messages",
+              "value": "={{ [{\"role\": \"system\", \"content\": \"You are an expert binary options trading analyst. Respond ONLY with valid JSON.\"}, {\"role\": \"user\", \"content\": \"Analyze \" + $json.asset + \" at \" + $json.timestamp + \". Market: \" + $json.market_context + \". Respond with JSON: {\\\"signal\\\": \\\"CALL/PUT/SKIP\\\", \\\"confidence\\\": 0-100, \\\"reasoning\\\": \\\"text\\\"}\"}] }}"
+            },
+            {
+              "name": "temperature",
+              "value": "0.3"
+            },
+            {
+              "name": "max_tokens",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deepseek-analysis",
+      "name": "DeepSeek Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [640, 420]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-ai-responses",
+      "name": "Merge AI Responses",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI Consensus Engine - Hybrid Strategy\n// Requires 2+ agreement AND average confidence >70%\n\nconst items = $input.all();\nconst responses = [];\n\n// Parse each AI response\nfor (const item of items) {\n  try {\n    let parsed;\n    \n    // Handle different response formats\n    if (item.json.choices) {\n      // OpenAI/DeepSeek format\n      const content = item.json.choices[0]?.message?.content || item.json.choices[0]?.text;\n      parsed = JSON.parse(content);\n    } else if (item.json.content) {\n      // Claude format\n      const content = Array.isArray(item.json.content) \n        ? item.json.content[0].text \n        : item.json.content;\n      parsed = JSON.parse(content);\n    } else if (item.json.signal) {\n      // Already parsed\n      parsed = item.json;\n    }\n    \n    if (parsed && parsed.signal && parsed.confidence !== undefined) {\n      responses.push({\n        model: item.json.model || 'unknown',\n        signal: parsed.signal.toUpperCase(),\n        confidence: parseFloat(parsed.confidence),\n        reasoning: parsed.reasoning || 'No reasoning provided'\n      });\n    }\n  } catch (error) {\n    console.error('Failed to parse AI response:', error.message);\n  }\n}\n\n// Ensure we have responses\nif (responses.length === 0) {\n  return [{\n    json: {\n      final_signal: 'SKIP',\n      confidence: 0,\n      consensus_reached: false,\n      reason: 'No valid AI responses received',\n      model_votes: {},\n      timestamp: new Date().toISOString()\n    }\n  }];\n}\n\n// Count votes for each signal\nconst votes = { CALL: 0, PUT: 0, SKIP: 0 };\nconst confidences = { CALL: [], PUT: [], SKIP: [] };\n\nfor (const resp of responses) {\n  const signal = resp.signal;\n  if (votes.hasOwnProperty(signal)) {\n    votes[signal]++;\n    confidences[signal].push(resp.confidence);\n  }\n}\n\n// Find majority signal (2+ votes)\nlet majoritySignal = null;\nlet maxVotes = Math.max(votes.CALL, votes.PUT, votes.SKIP);\n\nif (maxVotes >= 2) {\n  if (votes.CALL === maxVotes) majoritySignal = 'CALL';\n  else if (votes.PUT === maxVotes) majoritySignal = 'PUT';\n  else if (votes.SKIP === maxVotes) majoritySignal = 'SKIP';\n}\n\n// Calculate average confidence for majority signal\nlet avgConfidence = 0;\nlet finalSignal = 'SKIP';\nlet consensusReached = false;\nlet reason = '';\n\nif (majoritySignal && confidences[majoritySignal].length > 0) {\n  avgConfidence = confidences[majoritySignal].reduce((a, b) => a + b, 0) / confidences[majoritySignal].length;\n  \n  // Hybrid rule: 2+ agreement AND >70% confidence\n  if (avgConfidence >= 70 && majoritySignal !== 'SKIP') {\n    finalSignal = majoritySignal;\n    consensusReached = true;\n    reason = `${votes[majoritySignal]}/${responses.length} models agree on ${majoritySignal} with ${avgConfidence.toFixed(1)}% avg confidence`;\n  } else if (avgConfidence < 70) {\n    finalSignal = 'SKIP';\n    reason = `Confidence too low: ${avgConfidence.toFixed(1)}% < 70% threshold`;\n  } else {\n    finalSignal = 'SKIP';\n    reason = 'Models agree on SKIP';\n  }\n} else {\n  finalSignal = 'SKIP';\n  reason = 'No majority consensus (all models disagree)';\n}\n\n// Build detailed model votes\nconst modelVotes = responses.map(r => ({\n  model: r.model,\n  signal: r.signal,\n  confidence: r.confidence,\n  reasoning: r.reasoning\n}));\n\nreturn [{\n  json: {\n    final_signal: finalSignal,\n    confidence: Math.round(avgConfidence * 10) / 10,\n    consensus_reached: consensusReached,\n    reason: reason,\n    votes_breakdown: votes,\n    model_votes: modelVotes,\n    total_models: responses.length,\n    asset: items[0]?.json?.asset || 'UNKNOWN',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "consensus-calculator",
+      "name": "Consensus Calculator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.final_signal }}",
+              "operation": "notEquals",
+              "value2": "SKIP"
+            }
+          ],
+          "boolean": [
+            {
+              "value1": "={{ $json.consensus_reached }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "filter-tradeable",
+      "name": "Filter Tradeable Signals",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Prepare Market Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Market Context": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Claude Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DeepSeek Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Responses",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "DeepSeek Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Responses",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge AI Responses": {
+      "main": [
+        [
+          {
+            "node": "Consensus Calculator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consensus Calculator": {
+      "main": [
+        [
+          {
+            "node": "Filter Tradeable Signals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

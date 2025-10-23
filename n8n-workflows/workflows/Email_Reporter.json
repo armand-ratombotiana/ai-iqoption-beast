@@ -1,0 +1,204 @@
+{
+  "name": "Email_Reporter",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.email_type || $env.N8N_EMAIL_MODE || 'per_trade' }}",
+              "operation": "equals",
+              "value2": "per_trade"
+            }
+          ]
+        }
+      },
+      "id": "check-email-mode",
+      "name": "Check Email Mode",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format per-trade email\nconst data = $json;\nconst result = data.trade_result || data.result || 'PENDING';\nconst isWin = result === 'WIN';\nconst emoji = isWin ? '✅' : (result === 'LOSS' ? '❌' : '⏳');\n\nconst subject = `${emoji} Trade ${result}: ${data.asset || 'UNKNOWN'} ${data.direction || ''}`;\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n    .header { background: ${isWin ? '#28a745' : '#dc3545'}; color: white; padding: 20px; border-radius: 5px; }\n    .content { background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 5px; }\n    .stat { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #dee2e6; }\n    .stat:last-child { border-bottom: none; }\n    .label { font-weight: bold; }\n    .value { color: #495057; }\n    .ai-votes { background: #e9ecef; padding: 15px; margin: 10px 0; border-radius: 5px; }\n    .footer { text-align: center; color: #6c757d; font-size: 12px; margin-top: 20px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>${emoji} Trade ${result}</h1>\n      <p style=\"margin: 0;\">Timestamp: ${data.timestamp || new Date().toISOString()}</p>\n    </div>\n    \n    <div class=\"content\">\n      <h2>Trade Details</h2>\n      <div class=\"stat\">\n        <span class=\"label\">Asset:</span>\n        <span class=\"value\">${data.asset || 'UNKNOWN'}</span>\n      </div>\n      <div class=\"stat\">\n        <span class=\"label\">Direction:</span>\n        <span class=\"value\">${data.direction || data.action || 'UNKNOWN'}</span>\n      </div>\n      <div class=\"stat\">\n        <span class=\"label\">Amount:</span>\n        <span class=\"value\">$${(data.amount || 0).toFixed(2)}</span>\n      </div>\n      <div class=\"stat\">\n        <span class=\"label\">Duration:</span>\n        <span class=\"value\">${data.duration || 0} min</span>\n      </div>\n      <div class=\"stat\">\n        <span class=\"label\">Result:</span>\n        <span class=\"value\" style=\"font-weight: bold; color: ${isWin ? '#28a745' : '#dc3545'};\">${result}</span>\n      </div>\n      <div class=\"stat\">\n        <span class=\"label\">Payout:</span>\n        <span class=\"value\" style=\"font-weight: bold; color: ${(data.payout || 0) >= 0 ? '#28a745' : '#dc3545'};\">\n          ${(data.payout || 0) >= 0 ? '+' : ''}$${(data.payout || 0).toFixed(2)}\n        </span>\n      </div>\n    </div>\n    \n    <div class=\"ai-votes\">\n      <h3>AI Consensus</h3>\n      <div class=\"stat\">\n        <span class=\"label\">Confidence:</span>\n        <span class=\"value\">${(data.confidence || data.ai_confidence || 0).toFixed(1)}%</span>\n      </div>\n      <div class=\"stat\">\n        <span class=\"label\">Consensus:</span>\n        <span class=\"value\">${data.consensus_reached ? 'Yes' : 'No'}</span>\n      </div>\n      ${data.model_votes ? `\n      <div style=\"margin-top: 15px;\">\n        <strong>Model Votes:</strong>\n        <pre style=\"background: white; padding: 10px; border-radius: 3px; overflow-x: auto;\">${JSON.stringify(data.model_votes, null, 2)}</pre>\n      </div>\n      ` : ''}\n    </div>\n    \n    <div class=\"footer\">\n      <p>🤖 IQOption AI Trading System | Generated at ${new Date().toISOString()}</p>\n      <p>This is an automated notification. Do not reply to this email.</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{\n  json: {\n    subject: subject,\n    html: html,\n    email_to: $env.N8N_EMAIL_TO || data.email_to,\n    trade_data: data\n  }\n}];"
+      },
+      "id": "format-per-trade-email",
+      "name": "Format Per-Trade Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  COUNT(*) as total_trades,\n  SUM(CASE WHEN trade_result = 'WIN' THEN 1 ELSE 0 END) as wins,\n  SUM(CASE WHEN trade_result = 'LOSS' THEN 1 ELSE 0 END) as losses,\n  SUM(payout) as total_profit,\n  AVG(ai_confidence) as avg_confidence\nFROM trades\nWHERE DATE(timestamp) = CURRENT_DATE;",
+        "options": {}
+      },
+      "id": "fetch-daily-stats",
+      "name": "Fetch Daily Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [640, 500],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credentials",
+          "name": "PostgreSQL Trading DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format daily summary email\nconst stats = $json;\nconst totalTrades = parseInt(stats.total_trades) || 0;\nconst wins = parseInt(stats.wins) || 0;\nconst losses = parseInt(stats.losses) || 0;\nconst profit = parseFloat(stats.total_profit) || 0;\nconst avgConfidence = parseFloat(stats.avg_confidence) || 0;\nconst winRate = totalTrades > 0 ? (wins / totalTrades * 100).toFixed(1) : 0;\nconst isProfit = profit >= 0;\n\nconst subject = `📊 Daily Trading Summary - ${wins}W/${losses}L | ${isProfit ? '+' : ''}$${profit.toFixed(2)}`;\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; text-align: center; }\n    .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 20px 0; }\n    .stat-card { background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; border: 2px solid #e9ecef; }\n    .stat-value { font-size: 32px; font-weight: bold; color: #495057; margin: 10px 0; }\n    .stat-label { font-size: 14px; color: #6c757d; text-transform: uppercase; }\n    .profit-card { background: ${isProfit ? '#d4edda' : '#f8d7da'}; border-color: ${isProfit ? '#28a745' : '#dc3545'}; }\n    .profit-value { color: ${isProfit ? '#28a745' : '#dc3545'}; }\n    .footer { text-align: center; color: #6c757d; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>📊 Daily Trading Summary</h1>\n      <p style=\"margin: 0; font-size: 18px;\">${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>\n    </div>\n    \n    <div class=\"stats-grid\">\n      <div class=\"stat-card\">\n        <div class=\"stat-label\">Total Trades</div>\n        <div class=\"stat-value\">${totalTrades}</div>\n      </div>\n      \n      <div class=\"stat-card\">\n        <div class=\"stat-label\">Win Rate</div>\n        <div class=\"stat-value\">${winRate}%</div>\n      </div>\n      \n      <div class=\"stat-card\">\n        <div class=\"stat-label\">Wins</div>\n        <div class=\"stat-value\" style=\"color: #28a745;\">${wins}</div>\n      </div>\n      \n      <div class=\"stat-card\">\n        <div class=\"stat-label\">Losses</div>\n        <div class=\"stat-value\" style=\"color: #dc3545;\">${losses}</div>\n      </div>\n      \n      <div class=\"stat-card profit-card\" style=\"grid-column: 1 / -1;\">\n        <div class=\"stat-label\">Total Profit/Loss</div>\n        <div class=\"stat-value profit-value\">${isProfit ? '+' : ''}$${profit.toFixed(2)}</div>\n      </div>\n      \n      <div class=\"stat-card\" style=\"grid-column: 1 / -1;\">\n        <div class=\"stat-label\">Average AI Confidence</div>\n        <div class=\"stat-value\">${avgConfidence.toFixed(1)}%</div>\n      </div>\n    </div>\n    \n    <div style=\"background: #e7f3ff; padding: 20px; border-radius: 8px; margin: 20px 0;\">\n      <h3 style=\"margin-top: 0; color: #004085;\">📈 Performance Insights</h3>\n      <ul style=\"margin: 10px 0; padding-left: 20px;\">\n        <li>${totalTrades > 0 ? 'System executed ' + totalTrades + ' trades today' : 'No trades executed today'}</li>\n        <li>Win rate: ${winRate}% ${parseFloat(winRate) >= 60 ? '(Good)' : parseFloat(winRate) >= 50 ? '(Fair)' : '(Needs improvement)'}</li>\n        <li>Net result: ${isProfit ? 'Profitable day ✅' : 'Loss day ⚠️'}</li>\n        <li>AI confidence averaged ${avgConfidence.toFixed(1)}%</li>\n      </ul>\n    </div>\n    \n    <div class=\"footer\">\n      <p>🤖 IQOption AI Trading System</p>\n      <p>Generated at ${new Date().toISOString()}</p>\n      <p>This is an automated daily report. Do not reply to this email.</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{\n  json: {\n    subject: subject,\n    html: html,\n    email_to: $env.N8N_EMAIL_TO,\n    stats: stats\n  }\n}];"
+      },
+      "id": "format-daily-summary",
+      "name": "Format Daily Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 500]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.N8N_SMTP_USER }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1040, 400],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-credentials",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "email_sent",
+              "name": "email_sent",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "email_type",
+              "name": "email_type",
+              "value": "={{ $json.email_type || 'per_trade' }}",
+              "type": "string"
+            },
+            {
+              "id": "sent_at",
+              "name": "sent_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "email-success",
+      "name": "Email Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1240, 400]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Check Email Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Email Mode": {
+      "main": [
+        [
+          {
+            "node": "Format Per-Trade Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Daily Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Per-Trade Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Daily Stats": {
+      "main": [
+        [
+          {
+            "node": "Format Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Email Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

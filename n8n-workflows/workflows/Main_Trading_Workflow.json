@@ -1,0 +1,599 @@
+{
+  "name": "Main_Trading_Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": "={{ parseInt($env.N8N_TRADE_INTERVAL_MINUTES) || 1 }}"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "execution_id",
+              "name": "execution_id",
+              "value": "={{ $execution.id }}",
+              "type": "string"
+            },
+            {
+              "id": "start_time",
+              "name": "start_time",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "asset",
+              "name": "asset",
+              "value": "={{ $env.N8N_TRADE_ASSET || 'EURUSD' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "init-execution",
+      "name": "Initialize Execution",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT execution_id FROM workflow_executions WHERE status = 'running' LIMIT 1;",
+        "options": {}
+      },
+      "id": "check-running",
+      "name": "Check Running Executions",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [640, 400],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credentials",
+          "name": "PostgreSQL Trading DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.execution_id ? 1 : 0 }}",
+              "operation": "equal",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "filter-concurrent",
+      "name": "Filter Concurrent Executions",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [840, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO workflow_executions (execution_id, status, started_at) VALUES ('{{ $json.execution_id }}', 'running', '{{ $json.start_time }}');",
+        "options": {}
+      },
+      "id": "register-execution",
+      "name": "Register Execution",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1040, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credentials",
+          "name": "PostgreSQL Trading DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow.getWorkflow('AI_Consensus_Engine').id }}",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "call-ai-consensus",
+      "name": "Call AI Consensus Engine",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.final_signal }}",
+              "operation": "notEquals",
+              "value2": "SKIP"
+            }
+          ],
+          "boolean": [
+            {
+              "value1": "={{ $json.consensus_reached }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-tradeable",
+      "name": "Check Tradeable Signal",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "trade_action",
+              "name": "action",
+              "value": "={{ $json.final_signal.toLowerCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "trade_pair",
+              "name": "pair",
+              "value": "={{ $json.asset }}",
+              "type": "string"
+            },
+            {
+              "id": "trade_confidence",
+              "name": "confidence",
+              "value": "={{ $json.confidence }}",
+              "type": "number"
+            },
+            {
+              "id": "trade_amount",
+              "name": "amount",
+              "value": "={{ parseInt($env.N8N_TRADE_AMOUNT) || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "trade_duration",
+              "name": "duration",
+              "value": "=0",
+              "type": "number"
+            },
+            {
+              "id": "email",
+              "name": "email",
+              "value": "={{ $env.IQOPTION_EMAIL }}",
+              "type": "string"
+            },
+            {
+              "id": "password",
+              "name": "password",
+              "value": "={{ $env.IQOPTION_PASSWORD }}",
+              "type": "string"
+            },
+            {
+              "id": "accountType",
+              "name": "accountType",
+              "value": "={{ $env.IQOPTION_ACCOUNT_TYPE || 'demo' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "prepare-trade-payload",
+      "name": "Prepare Trade Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1640, 200]
+    },
+    {
+      "parameters": {
+        "operation": "trade",
+        "apiUrl": "={{ $env.IQOPTION_API_URL || 'http://localhost:5000' }}",
+        "action": "={{ $json.action }}",
+        "pair": "={{ $json.pair }}",
+        "confidence": "={{ $json.confidence }}",
+        "amount": "={{ $json.amount }}",
+        "duration": "={{ $json.duration }}",
+        "email": "={{ $json.email }}",
+        "password": "={{ $json.password }}",
+        "accountType": "={{ $json.accountType }}"
+      },
+      "id": "execute-trade",
+      "name": "Execute Trade",
+      "type": "n8n-nodes-base.iqOptionTradingBot",
+      "typeVersion": 2,
+      "position": [1840, 200],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-trade-success",
+      "name": "Check Trade Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2040, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "trade_id",
+              "name": "trade_id",
+              "value": "={{ $json.trade_id || $json.order_id || $now.toMillis() }}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{ $json.timestamp || $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "trade_result",
+              "name": "trade_result",
+              "value": "={{ $json.result || $json.trade_result || 'PENDING' }}",
+              "type": "string"
+            },
+            {
+              "id": "payout",
+              "name": "payout",
+              "value": "={{ $json.payout || $json.profit || 0 }}",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "id": "prepare-log-data",
+      "name": "Prepare Log Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [2240, 100]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow.getWorkflow('Data_Logger').id }}",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "call-data-logger",
+      "name": "Call Data Logger",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [2440, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $env.N8N_EMAIL_MODE || 'per_trade' }}",
+              "operation": "equals",
+              "value2": "per_trade"
+            }
+          ]
+        }
+      },
+      "id": "check-email-mode",
+      "name": "Check Email Mode",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2640, 100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "email_type",
+              "name": "email_type",
+              "value": "per_trade",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-email-type",
+      "name": "Set Email Type",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [2840, 0]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow.getWorkflow('Email_Reporter').id }}",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "call-email-reporter",
+      "name": "Call Email Reporter",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [3040, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE workflow_executions SET status = 'completed', completed_at = NOW() WHERE execution_id = '{{ $json.execution_id }}';",
+        "options": {}
+      },
+      "id": "mark-execution-complete",
+      "name": "Mark Execution Complete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [3240, 200],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credentials",
+          "name": "PostgreSQL Trading DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE workflow_executions SET status = 'skipped', completed_at = NOW(), notes = 'No tradeable signal' WHERE execution_id = '{{ $json.execution_id }}';",
+        "options": {}
+      },
+      "id": "mark-execution-skipped",
+      "name": "Mark Execution Skipped",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1640, 400],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credentials",
+          "name": "PostgreSQL Trading DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle trade execution error\nconst error = $json;\n\nreturn [{\n  json: {\n    trade_id: error.order_id || $now.toMillis(),\n    timestamp: $now.toISO(),\n    asset: error.pair || $env.N8N_TRADE_ASSET,\n    direction: error.action || 'UNKNOWN',\n    ai_confidence: error.confidence || 0,\n    trade_result: 'ERROR',\n    payout: 0,\n    amount: error.amount || 0,\n    duration: error.duration || 0,\n    model_votes: error.model_votes || {},\n    error_message: error.error || error.errorDetails || 'Trade execution failed'\n  }\n}];"
+      },
+      "id": "handle-trade-error",
+      "name": "Handle Trade Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 300]
+    }
+  ],
+  "connections": {
+    "Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Initialize Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Execution": {
+      "main": [
+        [
+          {
+            "node": "Check Running Executions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Running Executions": {
+      "main": [
+        [
+          {
+            "node": "Filter Concurrent Executions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Concurrent Executions": {
+      "main": [
+        [
+          {
+            "node": "Register Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Register Execution": {
+      "main": [
+        [
+          {
+            "node": "Call AI Consensus Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call AI Consensus Engine": {
+      "main": [
+        [
+          {
+            "node": "Check Tradeable Signal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Tradeable Signal": {
+      "main": [
+        [
+          {
+            "node": "Prepare Trade Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Execution Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Trade Payload": {
+      "main": [
+        [
+          {
+            "node": "Execute Trade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Trade": {
+      "main": [
+        [
+          {
+            "node": "Check Trade Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Trade Success": {
+      "main": [
+        [
+          {
+            "node": "Prepare Log Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Trade Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Log Data": {
+      "main": [
+        [
+          {
+            "node": "Call Data Logger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Trade Error": {
+      "main": [
+        [
+          {
+            "node": "Call Data Logger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Data Logger": {
+      "main": [
+        [
+          {
+            "node": "Check Email Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Email Mode": {
+      "main": [
+        [
+          {
+            "node": "Set Email Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Execution Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Email Type": {
+      "main": [
+        [
+          {
+            "node": "Call Email Reporter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Email Reporter": {
+      "main": [
+        [
+          {
+            "node": "Mark Execution Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": -1,
+    "errorWorkflow": "Error_Alert_Workflow"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

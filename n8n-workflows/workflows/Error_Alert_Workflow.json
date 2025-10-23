@@ -1,0 +1,166 @@
+{
+  "name": "Error_Alert_Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and format error information\nconst error = $json.error || {};\nconst execution = $execution;\nconst workflow = $workflow;\n\nconst errorInfo = {\n  workflow_name: workflow.name,\n  workflow_id: workflow.id,\n  execution_id: execution.id,\n  execution_mode: execution.mode,\n  error_message: error.message || 'Unknown error',\n  error_description: error.description || '',\n  error_node: error.node?.name || 'Unknown node',\n  error_timestamp: error.timestamp || new Date().toISOString(),\n  stack_trace: error.stack || 'No stack trace available',\n  input_data: JSON.stringify($input.all(), null, 2)\n};\n\nreturn [{ json: errorInfo }];"
+      },
+      "id": "extract-error-info",
+      "name": "Extract Error Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format error alert email\nconst error = $json;\n\nconst subject = `🚨 Trading System Error: ${error.workflow_name}`;\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 700px; margin: 0 auto; padding: 20px; }\n    .header { background: #dc3545; color: white; padding: 25px; border-radius: 8px; }\n    .content { background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px; }\n    .error-box { background: #fff3cd; border: 2px solid #ffc107; padding: 15px; border-radius: 5px; margin: 15px 0; }\n    .detail { margin: 10px 0; padding: 10px; background: white; border-radius: 5px; }\n    .label { font-weight: bold; color: #495057; }\n    .value { color: #6c757d; margin-top: 5px; }\n    .code { background: #212529; color: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; font-family: monospace; font-size: 12px; }\n    .footer { text-align: center; color: #6c757d; font-size: 12px; margin-top: 20px; }\n    .action-required { background: #f8d7da; border: 2px solid #dc3545; padding: 15px; border-radius: 5px; margin: 20px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🚨 Trading System Error Alert</h1>\n      <p style=\"margin: 0; font-size: 16px;\">An error occurred in your automated trading workflow</p>\n    </div>\n    \n    <div class=\"action-required\">\n      <strong>⚠️ ACTION REQUIRED:</strong> The trading system has encountered an error and may have stopped. Please investigate immediately.\n    </div>\n    \n    <div class=\"content\">\n      <h2>Error Details</h2>\n      \n      <div class=\"detail\">\n        <div class=\"label\">Workflow:</div>\n        <div class=\"value\">${error.workflow_name} (ID: ${error.workflow_id})</div>\n      </div>\n      \n      <div class=\"detail\">\n        <div class=\"label\">Execution ID:</div>\n        <div class=\"value\">${error.execution_id}</div>\n      </div>\n      \n      <div class=\"detail\">\n        <div class=\"label\">Failed Node:</div>\n        <div class=\"value\">${error.error_node}</div>\n      </div>\n      \n      <div class=\"detail\">\n        <div class=\"label\">Timestamp:</div>\n        <div class=\"value\">${error.error_timestamp}</div>\n      </div>\n      \n      <div class=\"error-box\">\n        <div class=\"label\">Error Message:</div>\n        <div class=\"value\" style=\"color: #dc3545; font-weight: bold;\">${error.error_message}</div>\n        ${error.error_description ? `<div class=\"value\" style=\"margin-top: 10px;\">${error.error_description}</div>` : ''}\n      </div>\n      \n      <h3>Stack Trace</h3>\n      <div class=\"code\">${error.stack_trace.replace(/\\n/g, '<br>')}</div>\n      \n      <h3>Input Data</h3>\n      <div class=\"code\">${error.input_data.replace(/\\n/g, '<br>').replace(/ /g, '&nbsp;')}</div>\n    </div>\n    \n    <div style=\"background: #d1ecf1; border: 2px solid #0dcaf0; padding: 15px; border-radius: 5px; margin: 20px 0;\">\n      <h3 style=\"margin-top: 0; color: #055160;\">🔍 Troubleshooting Steps</h3>\n      <ol style=\"margin: 10px 0; padding-left: 20px;\">\n        <li>Check n8n workflow execution logs for detailed error information</li>\n        <li>Verify all API credentials are valid (OpenAI, Claude, DeepSeek, IQOption)</li>\n        <li>Ensure the trading API server is running and accessible</li>\n        <li>Check database connection (PostgreSQL)</li>\n        <li>Verify Google Sheets API access</li>\n        <li>Review recent market conditions or API rate limits</li>\n      </ol>\n    </div>\n    \n    <div class=\"footer\">\n      <p>🤖 IQOption AI Trading System - Error Monitoring</p>\n      <p>Generated at ${new Date().toISOString()}</p>\n      <p>This is an automated error alert. Please take action as soon as possible.</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{\n  json: {\n    subject: subject,\n    html: html,\n    email_to: $env.N8N_EMAIL_TO,\n    error_data: error\n  }\n}];"
+      },
+      "id": "format-error-email",
+      "name": "Format Error Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.N8N_SMTP_USER }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "priority": "high"
+        }
+      },
+      "id": "send-error-email",
+      "name": "Send Error Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [840, 300],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-credentials",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO error_logs (\n  timestamp,\n  workflow_name,\n  workflow_id,\n  execution_id,\n  error_node,\n  error_message,\n  error_description,\n  stack_trace,\n  input_data\n) VALUES (\n  '{{ $json.error_data.error_timestamp }}',\n  '{{ $json.error_data.workflow_name }}',\n  '{{ $json.error_data.workflow_id }}',\n  '{{ $json.error_data.execution_id }}',\n  '{{ $json.error_data.error_node }}',\n  '{{ $json.error_data.error_message }}',\n  '{{ $json.error_data.error_description }}',\n  '{{ $json.error_data.stack_trace }}',\n  '{{ $json.error_data.input_data }}'::jsonb\n);",
+        "options": {}
+      },
+      "id": "log-error-to-db",
+      "name": "Log Error to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [840, 450],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credentials",
+          "name": "PostgreSQL Trading DB"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.N8N_GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "dataMode": "autoMapInputData",
+        "options": {
+          "useAppend": true
+        }
+      },
+      "id": "log-error-to-sheets",
+      "name": "Log Error to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1040, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credentials",
+          "name": "Google Sheets OAuth2"
+        }
+      },
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Error Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Error Info": {
+      "main": [
+        [
+          {
+            "node": "Format Error Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Email": {
+      "main": [
+        [
+          {
+            "node": "Send Error Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Error to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Error Email": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "self"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

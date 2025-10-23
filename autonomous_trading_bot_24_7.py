@@ -28,6 +28,10 @@ import threading
 from pathlib import Path
 import json
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Add src to path
 sys.path.insert(0, '/app/app/KAEL/KAEL/src')
 
@@ -409,35 +413,54 @@ class AutonomousTradingBot:
 
             binary_markets = open_markets['binary']
 
-            # Check preferred assets first
+            # Check preferred assets first (try both regular and -op suffix)
             for asset in AutonomousTradingConfig.PREFERRED_ASSETS:
                 asset = asset.strip()
+
+                # Try regular asset name
                 if asset in binary_markets and binary_markets[asset].get('open', False):
-                    # Verify payout is reasonable
-                    try:
-                        payout = self.api.get_binary_payout(asset)
-                        if payout and payout > 0.7:  # At least 70% payout
-                            self.logger.info(f"📊 Selected asset: {asset} (Payout: {payout:.1%})")
-                            return asset
-                    except:
-                        continue
+                    self.logger.info(f"📊 Selected preferred asset: {asset}")
+                    return asset
+
+                # Try with -op suffix (IQ Option format)
+                asset_op = f"{asset}-op"
+                if asset_op in binary_markets and binary_markets[asset_op].get('open', False):
+                    self.logger.info(f"📊 Selected preferred asset (op): {asset_op}")
+                    return asset_op
+
+                # Try with -OTC suffix
+                asset_otc = f"{asset}-OTC"
+                if asset_otc in binary_markets and binary_markets[asset_otc].get('open', False):
+                    self.logger.info(f"📊 Selected preferred asset (OTC): {asset_otc}")
+                    return asset_otc
 
             # If no preferred asset available, find any open market
-            for asset, info in binary_markets.items():
-                if info.get('open', False):
-                    try:
-                        payout = self.api.get_binary_payout(asset)
-                        if payout and payout > 0.7:
-                            self.logger.info(f"📊 Selected alternative asset: {asset} (Payout: {payout:.1%})")
-                            return asset
-                    except:
-                        continue
+            # Prioritize forex pairs over other assets
+            open_assets = [(asset, info) for asset, info in binary_markets.items() if info.get('open', False)]
 
-            self.logger.warning("⚠️  No suitable markets open for trading")
-            return None
+            if not open_assets:
+                self.logger.warning("⚠️  No open markets found")
+                return None
+
+            # Sort: prefer forex (contains USD, EUR, GBP, JPY) over OTC
+            def sort_key(item):
+                asset, _ = item
+                # Prefer non-OTC forex pairs
+                is_otc = 'OTC' in asset or 'OTC' in asset
+                is_forex = any(curr in asset for curr in ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'NZD', 'CHF'])
+                return (is_otc, not is_forex, asset)  # Sort by: OTC last, forex first, then alphabetically
+
+            open_assets.sort(key=sort_key)
+            selected_asset = open_assets[0][0]
+
+            self.logger.info(f"📊 Selected available asset: {selected_asset}")
+            self.logger.debug(f"Total {len(open_assets)} markets available")
+
+            return selected_asset
 
         except Exception as e:
             self.logger.error(f"❌ Error finding asset: {e}")
+            self.logger.debug(traceback.format_exc())
             return None
 
     def calculate_trade_amount(self) -> float:

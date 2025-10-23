@@ -1,0 +1,315 @@
+{
+  "name": "Data_Logger",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "log_id",
+              "name": "log_id",
+              "value": "={{ $json.trade_id || $now.toMillis() }}",
+              "type": "string"
+            },
+            {
+              "id": "log_timestamp",
+              "name": "log_timestamp",
+              "value": "={{ $json.timestamp || $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "asset",
+              "name": "asset",
+              "value": "={{ $json.asset || $json.pair || 'UNKNOWN' }}",
+              "type": "string"
+            },
+            {
+              "id": "direction",
+              "name": "direction",
+              "value": "={{ $json.direction || $json.action || $json.final_signal || 'UNKNOWN' }}",
+              "type": "string"
+            },
+            {
+              "id": "ai_confidence",
+              "name": "ai_confidence",
+              "value": "={{ $json.confidence || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "trade_result",
+              "name": "trade_result",
+              "value": "={{ $json.result || $json.trade_result || 'PENDING' }}",
+              "type": "string"
+            },
+            {
+              "id": "payout",
+              "name": "payout",
+              "value": "={{ $json.payout || $json.profit || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "amount",
+              "name": "amount",
+              "value": "={{ $json.amount || $json.trade_amount || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "duration",
+              "name": "duration",
+              "value": "={{ $json.duration || $json.expiration || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "model_votes",
+              "name": "model_votes",
+              "value": "={{ JSON.stringify($json.model_votes || {}) }}",
+              "type": "string"
+            },
+            {
+              "id": "error_message",
+              "name": "error_message",
+              "value": "={{ $json.error || $json.error_message || null }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "prepare-log-data",
+      "name": "Prepare Log Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO trades (\n  trade_id,\n  timestamp,\n  asset,\n  direction,\n  ai_confidence,\n  trade_result,\n  payout,\n  amount,\n  duration,\n  model_votes,\n  error_message\n) VALUES (\n  '{{ $json.log_id }}',\n  '{{ $json.log_timestamp }}',\n  '{{ $json.asset }}',\n  '{{ $json.direction }}',\n  {{ $json.ai_confidence }},\n  '{{ $json.trade_result }}',\n  {{ $json.payout }},\n  {{ $json.amount }},\n  {{ $json.duration }},\n  '{{ $json.model_votes }}'::jsonb,\n  {{ $json.error_message ? \"'\" + $json.error_message + \"'\" : \"NULL\" }}\n) ON CONFLICT (trade_id) DO UPDATE SET\n  trade_result = EXCLUDED.trade_result,\n  payout = EXCLUDED.payout,\n  error_message = EXCLUDED.error_message;",
+        "options": {}
+      },
+      "id": "log-to-postgres",
+      "name": "Log to PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [640, 200],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credentials",
+          "name": "PostgreSQL Trading DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.N8N_GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Trades",
+          "mode": "name"
+        },
+        "dataMode": "autoMapInputData",
+        "options": {
+          "useAppend": true
+        }
+      },
+      "id": "log-to-sheets",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [640, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credentials",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate and update daily statistics\nconst timestamp = $json.log_timestamp;\nconst today = new Date(timestamp).toISOString().split('T')[0];\n\nreturn [{\n  json: {\n    date: today,\n    trade_id: $json.log_id,\n    result: $json.trade_result,\n    payout: $json.payout,\n    amount: $json.amount\n  }\n}];"
+      },
+      "id": "prepare-stats-update",
+      "name": "Prepare Stats Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO daily_stats (date, total_trades, wins, losses, total_profit)\nVALUES (\n  '{{ $json.date }}',\n  1,\n  {{ $json.result === 'WIN' ? 1 : 0 }},\n  {{ $json.result === 'LOSS' ? 1 : 0 }},\n  {{ $json.payout }}\n)\nON CONFLICT (date) DO UPDATE SET\n  total_trades = daily_stats.total_trades + 1,\n  wins = daily_stats.wins + {{ $json.result === 'WIN' ? 1 : 0 }},\n  losses = daily_stats.losses + {{ $json.result === 'LOSS' ? 1 : 0 }},\n  total_profit = daily_stats.total_profit + {{ $json.payout }};",
+        "options": {}
+      },
+      "id": "update-daily-stats",
+      "name": "Update Daily Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1040, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credentials",
+          "name": "PostgreSQL Trading DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-logs",
+      "name": "Merge Logs",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [840, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "log_status",
+              "name": "log_status",
+              "value": "success",
+              "type": "string"
+            },
+            {
+              "id": "postgres_logged",
+              "name": "postgres_logged",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "sheets_logged",
+              "name": "sheets_logged",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "stats_updated",
+              "name": "stats_updated",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "logged_at",
+              "name": "logged_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "log-success",
+      "name": "Log Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1240, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Prepare Log Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Log Data": {
+      "main": [
+        [
+          {
+            "node": "Log to PostgreSQL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Merge Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Merge Logs",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Logs": {
+      "main": [
+        [
+          {
+            "node": "Prepare Stats Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Stats Update": {
+      "main": [
+        [
+          {
+            "node": "Update Daily Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Daily Stats": {
+      "main": [
+        [
+          {
+            "node": "Log Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-15T00:00:00.000Z",
+  "versionId": "1"
+}

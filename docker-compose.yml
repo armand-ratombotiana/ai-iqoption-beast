@@ -1,0 +1,202 @@
+version: '3.8'
+
+services:
+  # PostgreSQL + TimescaleDB for trade data storage
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: kael-trading-db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: trading_db
+      POSTGRES_USER: trading_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trading123}
+      TIMESCALEDB_TELEMETRY: 'off'
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+
+    networks:
+      - trading-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_user -d trading_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Redis for caching and real-time data
+  redis:
+    image: redis:7-alpine
+    container_name: kael-redis
+    restart: unless-stopped
+
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    networks:
+      - trading-network
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # KAEL Trading System
+  trading-bot:
+    build:
+      context: ./advanced_trading_system
+      dockerfile: Dockerfile
+    container_name: kael-trading-bot
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    environment:
+      # IQ Option Credentials
+      - IQOPTION_EMAIL=${IQOPTION_EMAIL}
+      - IQOPTION_PASSWORD=${IQOPTION_PASSWORD}
+      - TRADING_MODE=${TRADING_MODE:-demo}
+
+      # Database Configuration
+      - DB_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=trading_db
+      - DB_USERNAME=trading_user
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-trading123}
+
+      # Redis Configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123}
+      - REDIS_DB=0
+
+      # AI API Keys
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+
+      # Trading Configuration
+      - BASE_TRADE_AMOUNT=${BASE_TRADE_AMOUNT:-1.0}
+      - MAX_TRADE_AMOUNT=${MAX_TRADE_AMOUNT:-10.0}
+      - MAX_DAILY_LOSS=${MAX_DAILY_LOSS:-50}
+      - MAX_DAILY_PROFIT=${MAX_DAILY_PROFIT:-100}
+      - MAX_CONSECUTIVE_LOSSES=${MAX_CONSECUTIVE_LOSSES:-5}
+      - MIN_BALANCE=${MIN_BALANCE:-50}
+
+      # AI Configuration
+      - MIN_AI_CONFIDENCE=${MIN_AI_CONFIDENCE:-65}
+      - MIN_CONSENSUS_AGREEMENT=${MIN_CONSENSUS_AGREEMENT:-0.7}
+
+      # Martingale
+      - ENABLE_MARTINGALE=${ENABLE_MARTINGALE:-true}
+      - MARTINGALE_MULTIPLIER=${MARTINGALE_MULTIPLIER:-1.5}
+      - MAX_MARTINGALE_LEVEL=${MAX_MARTINGALE_LEVEL:-3}
+
+      # Monitoring
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENABLE_HEALTH_API=${ENABLE_HEALTH_API:-true}
+      - HEALTH_API_PORT=${HEALTH_API_PORT:-5001}
+
+    ports:
+      - "5001:5001"  # Health API
+
+    volumes:
+      # Persist logs
+      - ./logs:/app/logs
+      # Mount .env file (if exists)
+      - ./.env:/app/.env:ro
+
+    networks:
+      - trading-network
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+  # Grafana for monitoring (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kael-grafana
+    restart: unless-stopped
+
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+
+    ports:
+      - "3000:3000"
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+
+    networks:
+      - trading-network
+
+    depends_on:
+      - postgres
+
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  trading-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

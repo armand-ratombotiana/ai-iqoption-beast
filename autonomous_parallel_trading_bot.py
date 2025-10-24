@@ -96,10 +96,11 @@ class ParallelTradingConfig:
     TRADING_MODE = os.getenv('TRADING_MODE', 'demo')
     CONTINUOUS_OPERATION_24_7 = True
 
-    # Parallel Trading Settings
-    MAX_CONCURRENT_INSTRUMENTS = int(os.getenv('MAX_CONCURRENT_INSTRUMENTS', 5))
+    # Parallel Trading Settings - OPTIMIZED to reduce queue delays
+    MAX_CONCURRENT_INSTRUMENTS = int(os.getenv('MAX_CONCURRENT_INSTRUMENTS', 3))  # Reduced from 5 to 3
     MAX_INSTRUMENTS_TO_MONITOR = int(os.getenv('MAX_INSTRUMENTS_TO_MONITOR', 20))
     ENABLE_DYNAMIC_INSTRUMENT_SELECTION = True
+    MAX_PARALLEL_EXECUTIONS = 3  # Limit simultaneous trade executions to prevent timing failures
 
     # Binary Options Settings - 1 MINUTE TRADES
     BINARY_OPTION_DURATION = 1  # 1 minute
@@ -112,10 +113,10 @@ class ParallelTradingConfig:
     SAFETY_MARGIN_WIN_RATE = float(os.getenv('SAFETY_MARGIN_WIN_RATE', 0.02))  # 2% safety margin
     MIN_EXPECTED_VALUE = float(os.getenv('MIN_EXPECTED_VALUE', 0.05))  # 5% minimum EV
     
-    # Expiration Alignment Settings - RELAXED for better execution rate
-    MIN_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MIN_TIME_TO_EXPIRY', 35))  # Min 35s before expiry
+    # Expiration Alignment Settings - OPTIMIZED to prevent "buy late" failures
+    MIN_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MIN_TIME_TO_EXPIRY', 45))  # Min 45s before expiry (was 35s)
     MAX_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MAX_TIME_TO_EXPIRY', 90))  # Max 90s (1.5min + buffer)
-    EXPIRATION_BUFFER_SECONDS = int(os.getenv('EXPIRATION_BUFFER', 5))  # 5s buffer
+    EXPIRATION_BUFFER_SECONDS = int(os.getenv('EXPIRATION_BUFFER', 8))  # 8s buffer (was 5s)
     
     # Noise Filtering Settings
     NOISE_THRESHOLD = float(os.getenv('NOISE_THRESHOLD', 0.3))  # 30% noise threshold

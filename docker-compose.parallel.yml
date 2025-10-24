@@ -24,9 +24,9 @@ services:
       - TRADING_MODE=${TRADING_MODE:-demo}
 
       # ========================================================================
-      # PARALLEL TRADING SETTINGS
+      # PARALLEL TRADING SETTINGS (OPTIMIZED for timing)
       # ========================================================================
-      - MAX_CONCURRENT_INSTRUMENTS=${MAX_CONCURRENT_INSTRUMENTS:-5}
+      - MAX_CONCURRENT_INSTRUMENTS=${MAX_CONCURRENT_INSTRUMENTS:-3}
       - MAX_INSTRUMENTS_TO_MONITOR=${MAX_INSTRUMENTS_TO_MONITOR:-20}
       - PORTFOLIO_RISK_PERCENT=${PORTFOLIO_RISK_PERCENT:-10.0}
       - MAX_RISK_PER_INSTRUMENT=${MAX_RISK_PER_INSTRUMENT:-2.5}
@@ -52,9 +52,9 @@ services:
       - MAX_TRADES_PER_DAY=${MAX_TRADES_PER_DAY:-7200}
 
       # ========================================================================
-      # AI SIGNAL REQUIREMENTS
+      # AI SIGNAL REQUIREMENTS (OPTIMIZED for execution rate)
       # ========================================================================
-      - MIN_AI_CONFIDENCE=${MIN_AI_CONFIDENCE:-70}
+      - MIN_AI_CONFIDENCE=${MIN_AI_CONFIDENCE:-60}
 
       # ========================================================================
       # AI API KEYS (Optional)
@@ -81,6 +81,8 @@ services:
     volumes:
       # Persist logs outside container
       - ./logs:/app/app/KAEL/KAEL/logs
+      # Persist database outside container (NEW: comprehensive trade logging)
+      - ./database_files:/app/app/KAEL/KAEL/database_files
       # Mount .env file (read-only)
       - ./.env:/app/app/KAEL/KAEL/.env:ro
 

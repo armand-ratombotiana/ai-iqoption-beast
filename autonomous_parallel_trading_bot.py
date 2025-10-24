@@ -35,6 +35,15 @@ from collections import deque
 from dotenv import load_dotenv
 load_dotenv()
 
+# Database logging system (PROJECT_FOCUS_GUIDELINES: "Log everything")
+try:
+    from database import TradeLogger
+    DB_LOGGING_ENABLED = True
+except ImportError:
+    TradeLogger = None
+    DB_LOGGING_ENABLED = False
+    print("⚠️  Database logging not available")
+
 # Add src to path
 sys.path.insert(0, '/app/app/KAEL/KAEL/src')
 
@@ -661,6 +670,15 @@ class ParallelTradingBot:
         self.executor = ThreadPoolExecutor(max_workers=ParallelTradingConfig.MAX_WORKER_THREADS)
         self.market_data_cache = {}
         self.cache_lock = threading.Lock()
+
+        # Database logging (PROJECT_FOCUS_GUIDELINES: "Log everything")
+        self.trade_logger = None
+        if DB_LOGGING_ENABLED:
+            try:
+                self.trade_logger = TradeLogger("logs/kael_trading.db")
+                self.logger.info("✅ Database logging enabled")
+            except Exception as e:
+                self.logger.warning(f"⚠️  Database logging disabled: {e}")
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)

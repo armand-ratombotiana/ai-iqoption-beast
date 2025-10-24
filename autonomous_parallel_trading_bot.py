@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """
-🤖 OPTIMIZED 24/7 PARALLEL TRADING BOT - INSTANT EXECUTION
-Production-Ready Continuous Multi-Asset Trading System
+🤖 BINARY-OPTION OPTIMIZED 24/7 PARALLEL TRADING BOT
+Production-Ready Continuous Multi-Asset Trading System with Binary-Option Specifics
 
 Features:
-- INSTANT trade execution - minimal latency
+- Binary-option payout-aware position sizing
+- Expiration alignment and time-to-expiry validation
+- Noise filtering with neutral thresholds
+- Dynamic calibration based on historical performance
 - Real-time technical analysis at trade entry
 - 24/7 continuous operation with auto-recovery
-- Trade multiple instruments simultaneously (up to 10 concurrent)
-- Trade every minute on each instrument
-- Independent signal generation per instrument
+- Trade multiple instruments simultaneously
 - Advanced portfolio risk management
-- Zero-delay market scanning
-- Optimized for technical analysis accuracy
 
-CRITICAL: Optimized for immediate execution to preserve TA accuracy!
+CRITICAL: Optimized for binary options with payout/expiration awareness!
 """
 
 import sys
@@ -24,11 +23,13 @@ import logging
 import signal
 import traceback
 from datetime import datetime, timedelta
-from typing import Dict, Optional, List, Set
+from typing import Dict, Optional, List, Set, Tuple
 import threading
 from pathlib import Path
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from collections import deque
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -42,11 +43,54 @@ from iqoptionapi.stable_api import IQ_Option
 
 
 # =============================================================================
-# OPTIMIZED 24/7 PARALLEL TRADING CONFIGURATION
+# BINARY-OPTION SPECIFIC DATA STRUCTURES
+# =============================================================================
+
+@dataclass
+class BinaryOptionContext:
+    """Binary option specific context for trade decisions"""
+    payout_ratio: Optional[float] = None
+    min_required_win_rate: Optional[float] = None
+    breakeven_win_rate: Optional[float] = None
+    expected_value: Optional[float] = None
+    time_to_expiry_seconds: Optional[int] = None
+    expiration_aligned: bool = False
+    timing_risk: bool = False
+    noise_level: float = 0.0
+    signal_strength: float = 0.0
+    meets_payout_threshold: bool = False
+    meets_timing_threshold: bool = False
+    meets_noise_threshold: bool = False
+    tradeable: bool = False
+    rejection_reason: Optional[str] = None
+
+
+@dataclass
+class CalibrationMetrics:
+    """Calibration metrics for adaptive thresholds"""
+    instrument: str
+    total_trades: int = 0
+    wins: int = 0
+    losses: int = 0
+    win_rate: float = 0.0
+    avg_payout: float = 0.0
+    avg_profit: float = 0.0
+    avg_loss: float = 0.0
+    sharpe_ratio: float = 0.0
+    kelly_fraction: float = 0.0
+    confidence_calibration: float = 1.0  # Multiplier for confidence
+    noise_threshold: float = 0.3  # Dynamic noise threshold
+    neutral_threshold: float = 0.6  # Dynamic neutral threshold
+    last_calibration: datetime = field(default_factory=datetime.now)
+    profit_history: deque = field(default_factory=lambda: deque(maxlen=100))
+
+
+# =============================================================================
+# ENHANCED CONFIGURATION WITH BINARY-OPTION SPECIFICS
 # =============================================================================
 
 class ParallelTradingConfig:
-    """Configuration for optimized 24/7 parallel multi-instrument trading"""
+    """Configuration for binary-option optimized parallel trading"""
 
     # Trading Mode
     TRADING_MODE = os.getenv('TRADING_MODE', 'demo')
@@ -62,6 +106,32 @@ class ParallelTradingConfig:
     DEFAULT_TRADE_AMOUNT = float(os.getenv('BASE_TRADE_AMOUNT', 1.0))
     MIN_TRADE_AMOUNT = 1.0
     MAX_TRADE_AMOUNT = float(os.getenv('MAX_TRADE_AMOUNT', 10.0))
+
+    # Binary-Option Specific Thresholds - OPTIMIZED for balance
+    MIN_PAYOUT_RATIO = float(os.getenv('MIN_PAYOUT_RATIO', 0.65))  # 65% minimum payout (was 70%)
+    SAFETY_MARGIN_WIN_RATE = float(os.getenv('SAFETY_MARGIN_WIN_RATE', 0.02))  # 2% safety margin
+    MIN_EXPECTED_VALUE = float(os.getenv('MIN_EXPECTED_VALUE', 0.05))  # 5% minimum EV
+    
+    # Expiration Alignment Settings - RELAXED for better execution rate
+    MIN_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MIN_TIME_TO_EXPIRY', 35))  # Min 35s before expiry
+    MAX_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MAX_TIME_TO_EXPIRY', 90))  # Max 90s (1.5min + buffer)
+    EXPIRATION_BUFFER_SECONDS = int(os.getenv('EXPIRATION_BUFFER', 5))  # 5s buffer
+    
+    # Noise Filtering Settings
+    NOISE_THRESHOLD = float(os.getenv('NOISE_THRESHOLD', 0.3))  # 30% noise threshold
+    NEUTRAL_THRESHOLD = float(os.getenv('NEUTRAL_THRESHOLD', 0.6))  # 60% neutral threshold
+    MIN_SIGNAL_STRENGTH = float(os.getenv('MIN_SIGNAL_STRENGTH', 0.15))  # 15% min signal strength
+    
+    # Calibration Settings
+    ENABLE_DYNAMIC_CALIBRATION = bool(os.getenv('ENABLE_CALIBRATION', True))
+    CALIBRATION_INTERVAL_TRADES = int(os.getenv('CALIBRATION_INTERVAL', 20))  # Recalibrate every 20 trades
+    MIN_TRADES_FOR_CALIBRATION = int(os.getenv('MIN_CALIBRATION_TRADES', 10))  # Min 10 trades
+    CALIBRATION_LOOKBACK_WINDOW = int(os.getenv('CALIBRATION_WINDOW', 100))  # Last 100 trades
+    
+    # Kelly Criterion Settings
+    ENABLE_KELLY_SIZING = bool(os.getenv('ENABLE_KELLY', True))
+    KELLY_FRACTION = float(os.getenv('KELLY_FRACTION', 0.25))  # Use 25% of Kelly
+    MAX_KELLY_POSITION = float(os.getenv('MAX_KELLY_POSITION', 5.0))  # Max $5 per Kelly
 
     # Instrument Pool
     INSTRUMENT_POOL = os.getenv('TRADING_ASSETS',
@@ -87,24 +157,24 @@ class ParallelTradingConfig:
     MAX_TOTAL_TRADES_PER_HOUR = int(os.getenv('MAX_TRADES_PER_HOUR', 300))
     MAX_TOTAL_TRADES_PER_DAY = int(os.getenv('MAX_TRADES_PER_DAY', 7200))
 
-    # AI Signal Requirements
-    MIN_AI_CONFIDENCE = int(os.getenv('MIN_AI_CONFIDENCE', 65))
+    # AI Signal Requirements - BALANCED for execution
+    MIN_AI_CONFIDENCE = int(os.getenv('MIN_AI_CONFIDENCE', 60))  # Lowered from 65 to 60
 
-    # OPTIMIZED TIMING - MINIMAL DELAYS FOR ACCURATE TA
-    WAIT_FOR_RESULT_SECONDS = 65  # Reduced from 70 to 65 seconds
+    # OPTIMIZED TIMING
+    WAIT_FOR_RESULT_SECONDS = 65
     CONNECTION_CHECK_INTERVAL = 300
-    INSTRUMENT_SCAN_INTERVAL = 3  # OPTIMIZED: Scan every 3 seconds (was 10)
-    TRADE_EXECUTION_DELAY = 0  # ZERO delay - execute immediately
-    SIGNAL_GENERATION_TIMEOUT = 0.5  # Max 0.5s for signal generation
-    MARKET_DATA_CACHE_SECONDS = 2  # Cache market data for 2 seconds max
+    INSTRUMENT_SCAN_INTERVAL = 3
+    TRADE_EXECUTION_DELAY = 0
+    SIGNAL_GENERATION_TIMEOUT = 0.5
+    MARKET_DATA_CACHE_SECONDS = 2
 
-    # Thread Pool - Increased for faster parallel execution
-    MAX_WORKER_THREADS = int(os.getenv('MAX_WORKER_THREADS', 15))  # Increased from 10
+    # Thread Pool
+    MAX_WORKER_THREADS = int(os.getenv('MAX_WORKER_THREADS', 15))
 
     # 24/7 Auto-Recovery Settings
     AUTO_RECONNECT_ON_FAILURE = True
     MAX_RECONNECT_ATTEMPTS = 999999
-    RECONNECT_DELAY_SECONDS = 10  # Reduced from 30 to 10 seconds
+    RECONNECT_DELAY_SECONDS = 10
 
     # Credentials
     EMAIL = os.getenv('IQOPTION_EMAIL', '')
@@ -130,17 +200,17 @@ def setup_logging():
     )
 
     file_handler = logging.FileHandler(
-        log_dir / f'parallel_bot_optimized_{datetime.now().strftime("%Y%m%d")}.log'
+        log_dir / f'binary_bot_{datetime.now().strftime("%Y%m%d")}.log'
     )
     file_handler.setFormatter(detailed_formatter)
     file_handler.setLevel(logging.DEBUG)
 
     trade_handler = logging.FileHandler(
-        log_dir / f'parallel_trades_optimized_{datetime.now().strftime("%Y%m%d")}.log'
+        log_dir / f'binary_trades_{datetime.now().strftime("%Y%m%d")}.log'
     )
     trade_handler.setFormatter(detailed_formatter)
     trade_handler.setLevel(logging.INFO)
-    trade_handler.addFilter(lambda record: 'TRADE' in record.getMessage())
+    trade_handler.addFilter(lambda record: 'TRADE' in record.getMessage() or 'BINARY' in record.getMessage())
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(detailed_formatter)
@@ -156,11 +226,61 @@ def setup_logging():
 
 
 # =============================================================================
-# INSTRUMENT STATE MANAGER
+# BINARY-OPTION CALCULATOR
+# =============================================================================
+
+class BinaryOptionCalculator:
+    """Calculate binary-option specific metrics"""
+    
+    @staticmethod
+    def calculate_breakeven_win_rate(payout_ratio: float) -> float:
+        """Calculate breakeven win rate for given payout"""
+        return 1.0 / (1.0 + payout_ratio)
+    
+    @staticmethod
+    def calculate_required_win_rate(payout_ratio: float, safety_margin: float = 0.02) -> float:
+        """Calculate required win rate with safety margin"""
+        breakeven = BinaryOptionCalculator.calculate_breakeven_win_rate(payout_ratio)
+        return breakeven + safety_margin
+    
+    @staticmethod
+    def calculate_expected_value(win_prob: float, payout_ratio: float, amount: float) -> float:
+        """Calculate expected value of trade"""
+        win_amount = amount * payout_ratio
+        loss_amount = amount
+        ev = (win_prob * win_amount) - ((1 - win_prob) * loss_amount)
+        return ev
+    
+    @staticmethod
+    def calculate_kelly_fraction(win_prob: float, payout_ratio: float) -> float:
+        """Calculate Kelly Criterion fraction"""
+        if payout_ratio <= 0:
+            return 0.0
+        kelly = (win_prob * (1 + payout_ratio) - 1) / payout_ratio
+        return max(0.0, kelly)
+    
+    @staticmethod
+    def calculate_sharpe_ratio(returns: List[float], risk_free_rate: float = 0.0) -> float:
+        """Calculate Sharpe ratio from returns"""
+        if not returns or len(returns) < 2:
+            return 0.0
+        
+        import statistics
+        mean_return = statistics.mean(returns)
+        std_return = statistics.stdev(returns)
+        
+        if std_return == 0:
+            return 0.0
+        
+        return (mean_return - risk_free_rate) / std_return
+
+
+# =============================================================================
+# ENHANCED INSTRUMENT STATE MANAGER WITH CALIBRATION
 # =============================================================================
 
 class InstrumentStateManager:
-    """Manage state for individual instruments with minute-by-minute tracking"""
+    """Manage state for individual instruments with calibration"""
 
     def __init__(self, instrument: str):
         self.instrument = instrument
@@ -181,8 +301,13 @@ class InstrumentStateManager:
             'last_signal': None,
             'last_confidence': 0,
             'active_trade_id': None,
-            'last_execution_time_ms': 0  # Track execution speed
+            'last_execution_time_ms': 0,
+            'last_payout_ratio': None,
+            'avg_payout_ratio': 0.0,
+            'payout_sum': 0.0,
+            'payout_count': 0
         }
+        self.calibration = CalibrationMetrics(instrument=instrument)
 
     def can_trade(self) -> tuple[bool, str]:
         """Check if this instrument can trade"""
@@ -211,9 +336,13 @@ class InstrumentStateManager:
                 if elapsed < ParallelTradingConfig.MIN_SECONDS_BETWEEN_INSTRUMENT_TRADES:
                     return False, f"Wait {int(ParallelTradingConfig.MIN_SECONDS_BETWEEN_INSTRUMENT_TRADES - elapsed)}s"
 
+            # Check consecutive losses
+            if self.state['consecutive_losses'] >= ParallelTradingConfig.MAX_CONSECUTIVE_LOSSES:
+                return False, f"Max consecutive losses reached"
+
             return True, "OK"
 
-    def start_trade(self, trade_id: str):
+    def start_trade(self, trade_id: str, payout_ratio: Optional[float] = None):
         """Mark instrument as trading"""
         with self.lock:
             self.state['is_trading'] = True
@@ -222,6 +351,12 @@ class InstrumentStateManager:
             self.state['trades_this_hour'] += 1
             self.state['trades_this_minute'] += 1
             self.state['total_trades'] += 1
+            
+            if payout_ratio is not None:
+                self.state['last_payout_ratio'] = payout_ratio
+                self.state['payout_sum'] += payout_ratio
+                self.state['payout_count'] += 1
+                self.state['avg_payout_ratio'] = self.state['payout_sum'] / self.state['payout_count']
 
     def complete_trade(self, won: bool, profit: float, execution_time_ms: int):
         """Complete a trade and update stats"""
@@ -231,14 +366,88 @@ class InstrumentStateManager:
             self.state['profit'] += profit
             self.state['last_execution_time_ms'] = execution_time_ms
 
+            # Update calibration metrics
+            self.calibration.total_trades += 1
+            self.calibration.profit_history.append(profit)
+            
             if won:
                 self.state['wins'] += 1
                 self.state['consecutive_wins'] += 1
                 self.state['consecutive_losses'] = 0
+                self.calibration.wins += 1
+                self.calibration.avg_profit = (
+                    (self.calibration.avg_profit * (self.calibration.wins - 1) + profit) / 
+                    self.calibration.wins
+                )
             else:
                 self.state['losses'] += 1
                 self.state['consecutive_losses'] += 1
                 self.state['consecutive_wins'] = 0
+                self.calibration.losses += 1
+                self.calibration.avg_loss = (
+                    (self.calibration.avg_loss * (self.calibration.losses - 1) + abs(profit)) / 
+                    self.calibration.losses
+                )
+            
+            # Update win rate
+            if self.calibration.total_trades > 0:
+                self.calibration.win_rate = self.calibration.wins / self.calibration.total_trades
+            
+            # Update average payout
+            if self.state['last_payout_ratio'] is not None:
+                self.calibration.avg_payout = self.state['avg_payout_ratio']
+            
+            # Recalibrate if needed
+            if (self.calibration.total_trades % ParallelTradingConfig.CALIBRATION_INTERVAL_TRADES == 0 and
+                self.calibration.total_trades >= ParallelTradingConfig.MIN_TRADES_FOR_CALIBRATION):
+                self._recalibrate()
+
+    def _recalibrate(self):
+        """Recalibrate thresholds based on performance"""
+        if not ParallelTradingConfig.ENABLE_DYNAMIC_CALIBRATION:
+            return
+        
+        # Calculate Sharpe ratio
+        if len(self.calibration.profit_history) >= 2:
+            returns = list(self.calibration.profit_history)
+            self.calibration.sharpe_ratio = BinaryOptionCalculator.calculate_sharpe_ratio(returns)
+        
+        # Calculate Kelly fraction
+        if self.calibration.avg_payout > 0:
+            self.calibration.kelly_fraction = BinaryOptionCalculator.calculate_kelly_fraction(
+                self.calibration.win_rate,
+                self.calibration.avg_payout
+            )
+        
+        # Adjust confidence calibration based on performance
+        if self.calibration.win_rate > 0.55:  # Performing well
+            self.calibration.confidence_calibration = min(1.2, self.calibration.confidence_calibration + 0.05)
+        elif self.calibration.win_rate < 0.45:  # Performing poorly
+            self.calibration.confidence_calibration = max(0.8, self.calibration.confidence_calibration - 0.05)
+        
+        # Adjust noise threshold
+        if self.calibration.sharpe_ratio > 1.0:  # Good risk-adjusted returns
+            self.calibration.noise_threshold = max(0.2, self.calibration.noise_threshold - 0.05)
+        elif self.calibration.sharpe_ratio < 0.5:  # Poor risk-adjusted returns
+            self.calibration.noise_threshold = min(0.5, self.calibration.noise_threshold + 0.05)
+        
+        # Adjust neutral threshold
+        if self.calibration.win_rate > 0.55:
+            self.calibration.neutral_threshold = max(0.5, self.calibration.neutral_threshold - 0.05)
+        elif self.calibration.win_rate < 0.45:
+            self.calibration.neutral_threshold = min(0.7, self.calibration.neutral_threshold + 0.05)
+        
+        self.calibration.last_calibration = datetime.now()
+
+    def get_calibrated_thresholds(self) -> Dict:
+        """Get current calibrated thresholds"""
+        with self.lock:
+            return {
+                'confidence_multiplier': self.calibration.confidence_calibration,
+                'noise_threshold': self.calibration.noise_threshold,
+                'neutral_threshold': self.calibration.neutral_threshold,
+                'kelly_fraction': self.calibration.kelly_fraction
+            }
 
     def get_stats(self) -> Dict:
         """Get instrument statistics"""
@@ -258,7 +467,15 @@ class InstrumentStateManager:
                 'consecutive_losses': self.state['consecutive_losses'],
                 'is_trading': self.state['is_trading'],
                 'trades_this_hour': self.state['trades_this_hour'],
-                'avg_execution_ms': self.state['last_execution_time_ms']
+                'avg_execution_ms': self.state['last_execution_time_ms'],
+                'avg_payout_ratio': round(self.state['avg_payout_ratio'], 4),
+                'sharpe_ratio': round(self.calibration.sharpe_ratio, 3),
+                'kelly_fraction': round(self.calibration.kelly_fraction, 4),
+                'calibration': {
+                    'confidence_multiplier': round(self.calibration.confidence_calibration, 3),
+                    'noise_threshold': round(self.calibration.noise_threshold, 3),
+                    'neutral_threshold': round(self.calibration.neutral_threshold, 3)
+                }
             }
 
 
@@ -293,8 +510,8 @@ class PortfolioStateManager:
             'last_connection_check': datetime.now(),
             'total_uptime_seconds': 0,
             'total_trades_all_time': 0,
-            'avg_scan_time_ms': 0,  # Track scanning performance
-            'avg_execution_time_ms': 0  # Track execution performance
+            'avg_scan_time_ms': 0,
+            'avg_execution_time_ms': 0
         }
 
     def get_instrument_manager(self, instrument: str) -> InstrumentStateManager:
@@ -428,11 +645,11 @@ class PortfolioStateManager:
 
 
 # =============================================================================
-# OPTIMIZED 24/7 PARALLEL TRADING BOT
+# BINARY-OPTION OPTIMIZED TRADING BOT
 # =============================================================================
 
 class ParallelTradingBot:
-    """Optimized 24/7 Multi-instrument parallel trading bot"""
+    """Binary-option optimized 24/7 parallel trading bot"""
 
     def __init__(self, logger: logging.Logger):
         self.logger = logger
@@ -441,17 +658,18 @@ class ParallelTradingBot:
         self.running = False
         self.shutdown_requested = False
         self.executor = ThreadPoolExecutor(max_workers=ParallelTradingConfig.MAX_WORKER_THREADS)
-        self.market_data_cache = {}  # Cache for market data
+        self.market_data_cache = {}
         self.cache_lock = threading.Lock()
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
 
         self.logger.info("="*80)
-        self.logger.info("🚀 OPTIMIZED 24/7 PARALLEL TRADING BOT - INSTANT EXECUTION")
-        self.logger.info(f"⚡ Scan Interval: {ParallelTradingConfig.INSTRUMENT_SCAN_INTERVAL}s (OPTIMIZED)")
-        self.logger.info(f"📊 Max Concurrent: {ParallelTradingConfig.MAX_CONCURRENT_INSTRUMENTS}")
-        self.logger.info(f"⏱️  Zero-delay execution for accurate TA")
+        self.logger.info("🎯 BINARY-OPTION OPTIMIZED 24/7 PARALLEL TRADING BOT")
+        self.logger.info(f"💰 Min Payout: {ParallelTradingConfig.MIN_PAYOUT_RATIO:.1%}")
+        self.logger.info(f"⏰ Expiration Window: {ParallelTradingConfig.MIN_TIME_TO_EXPIRY_SECONDS}-{ParallelTradingConfig.MAX_TIME_TO_EXPIRY_SECONDS}s")
+        self.logger.info(f"🔇 Noise Threshold: {ParallelTradingConfig.NOISE_THRESHOLD:.1%}")
+        self.logger.info(f"📊 Calibration: {'Enabled' if ParallelTradingConfig.ENABLE_DYNAMIC_CALIBRATION else 'Disabled'}")
         self.logger.info("="*80)
 
     def signal_handler(self, signum, frame):
@@ -480,7 +698,7 @@ class ParallelTradingBot:
                 if not check:
                     self.logger.error(f"❌ Failed: {reason}")
                     if attempt < max_attempts - 1:
-                        time.sleep(3)  # Reduced from 5 to 3 seconds
+                        time.sleep(3)
                         continue
                     return False
 
@@ -534,14 +752,12 @@ class ParallelTradingBot:
     def get_available_instruments(self) -> List[str]:
         """Get available instruments with caching"""
         try:
-            # Check cache first
             with self.cache_lock:
                 if 'instruments' in self.market_data_cache:
                     cache_time, instruments = self.market_data_cache['instruments']
                     if (datetime.now() - cache_time).total_seconds() < ParallelTradingConfig.MARKET_DATA_CACHE_SECONDS:
                         return instruments
 
-            # Fetch fresh data
             open_markets = self.api.get_all_open_time()
             if not open_markets or 'binary' not in open_markets:
                 return []
@@ -557,7 +773,6 @@ class ParallelTradingBot:
                         available.append(test_name)
                         break
 
-            # Update cache
             with self.cache_lock:
                 self.market_data_cache['instruments'] = (datetime.now(), available)
 
@@ -567,27 +782,299 @@ class ParallelTradingBot:
             self.logger.error(f"❌ Error getting instruments: {e}")
             return []
 
-    def get_ai_signal(self, instrument: str) -> Optional[Dict]:
-        """Get AI signal with timeout"""
+    def get_binary_option_context(self, instrument: str) -> BinaryOptionContext:
+        """Get binary-option specific context for instrument"""
+        context = BinaryOptionContext()
+        
+        try:
+            # Get payout ratio
+            if self.api and hasattr(self.api, 'get_all_profit'):
+                all_profit = self.api.get_all_profit()
+                base_name = instrument.split('-')[0]
+                profits = all_profit.get(base_name) or all_profit.get(instrument) or {}
+                payout_ratio = profits.get('binary') if isinstance(profits, dict) else None
+                
+                if payout_ratio is None:
+                    for key in list(all_profit.keys()):
+                        if key.upper().startswith(base_name.upper()):
+                            payout_ratio = all_profit[key].get('binary')
+                            break
+                
+                if payout_ratio is not None:
+                    context.payout_ratio = float(payout_ratio)
+                    context.breakeven_win_rate = BinaryOptionCalculator.calculate_breakeven_win_rate(payout_ratio)
+                    context.min_required_win_rate = BinaryOptionCalculator.calculate_required_win_rate(
+                        payout_ratio, 
+                        ParallelTradingConfig.SAFETY_MARGIN_WIN_RATE
+                    )
+                    
+                    # Check payout threshold
+                    context.meets_payout_threshold = payout_ratio >= ParallelTradingConfig.MIN_PAYOUT_RATIO
+                    if not context.meets_payout_threshold:
+                        context.rejection_reason = f"Payout {payout_ratio:.2%} < min {ParallelTradingConfig.MIN_PAYOUT_RATIO:.2%}"
+        
+        except Exception as e:
+            self.logger.debug(f"Error getting payout for {instrument}: {e}")
+        
+        try:
+            # Get time to expiry
+            if self.api and hasattr(self.api, 'get_remaning'):
+                rem = self.api.get_remaning(ParallelTradingConfig.BINARY_OPTION_DURATION)
+                if isinstance(rem, (list, tuple)) and len(rem) > 0:
+                    rem_seconds = int(rem[0]) if isinstance(rem[0], (int, float)) else int(rem[1])
+                else:
+                    rem_seconds = int(rem)
+                
+                context.time_to_expiry_seconds = rem_seconds
+                
+                # Check expiration alignment
+                context.expiration_aligned = (
+                    ParallelTradingConfig.MIN_TIME_TO_EXPIRY_SECONDS <= rem_seconds <= 
+                    ParallelTradingConfig.MAX_TIME_TO_EXPIRY_SECONDS
+                )
+                
+                # Check timing risk
+                context.timing_risk = (
+                    rem_seconds < ParallelTradingConfig.MIN_TIME_TO_EXPIRY_SECONDS or
+                    rem_seconds > ParallelTradingConfig.MAX_TIME_TO_EXPIRY_SECONDS
+                )
+                
+                context.meets_timing_threshold = context.expiration_aligned and not context.timing_risk
+                
+                if not context.meets_timing_threshold:
+                    context.rejection_reason = f"Time to expiry {rem_seconds}s outside window"
+        
+        except Exception as e:
+            self.logger.debug(f"Error getting expiry for {instrument}: {e}")
+        
+        return context
+
+    def get_ai_signal(self, instrument: str, context: BinaryOptionContext) -> Optional[Dict]:
+        """Get AI signal with binary-option awareness and noise filtering"""
         import random
-        
-        # Fast signal generation (< 0.5s)
+        from statistics import mean
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+
         start_time = time.time()
-        
-        signals = ['CALL', 'PUT', 'NEUTRAL']
-        weights = [0.45, 0.45, 0.10]
 
-        signal = random.choices(signals, weights=weights)[0]
-        confidence = random.randint(60, 95)
+        # Get calibrated thresholds
+        inst_manager = self.portfolio_manager.get_instrument_manager(instrument)
+        thresholds = inst_manager.get_calibrated_thresholds()
 
-        generation_time = (time.time() - start_time) * 1000  # ms
+        # Fetch candles
+        candles = None
+        try:
+            if self.api is not None:
+                raw = self.api.get_candles(instrument, 60, 60, time.time())
+                if raw and isinstance(raw, list) and len(raw) > 5:
+                    candles = raw
+        except Exception:
+            candles = None
+
+        # Fallback if no candles
+        if not candles:
+            return None
+
+        # Strategy implementations
+        def strat_price_action(c):
+            last = c[-1]
+            return ('CALL' if last['close'] > last['open'] else 'PUT' if last['close'] < last['open'] else 'NEUTRAL', 0.6)
+
+        def strat_two_bar_reversal(c):
+            if len(c) < 3:
+                return ('NEUTRAL', 0.0)
+            a, b, last = c[-3], c[-2], c[-1]
+            if a['close'] > a['open'] and b['close'] < b['open'] and last['close'] < last['open']:
+                return ('PUT', 0.7)
+            if a['close'] < a['open'] and b['close'] > b['open'] and last['close'] > last['open']:
+                return ('CALL', 0.7)
+            return ('NEUTRAL', 0.0)
+
+        def strat_trend_strength(c):
+            if len(c) < 10:
+                return ('NEUTRAL', 0.0)
+            closes = [x['close'] for x in c[-10:]]
+            slope = closes[-1] - closes[0]
+            if slope > 0:
+                return ('CALL', min(0.9, 0.5 + slope / closes[0]))
+            if slope < 0:
+                return ('PUT', min(0.9, 0.5 + abs(slope) / closes[0]))
+            return ('NEUTRAL', 0.0)
+
+        def strat_volume_spike(c):
+            vols = [x.get('volume', 0) for x in c[-20:]]
+            if not any(vols):
+                return ('NEUTRAL', 0.0)
+            avg = mean(vols)
+            lastv = vols[-1]
+            last = c[-1]
+            if lastv > avg * 2:
+                return ('CALL' if last['close'] > last['open'] else 'PUT', 0.75)
+            return ('NEUTRAL', 0.0)
+
+        def strat_count_green_red(c):
+            window = c[-10:]
+            greens = sum(1 for x in window if x['close'] > x['open'])
+            reds = sum(1 for x in window if x['close'] < x['open'])
+            if greens - reds >= 6:
+                return ('CALL', 0.7)
+            if reds - greens >= 6:
+                return ('PUT', 0.7)
+            return ('NEUTRAL', 0.0)
+
+        def strat_momentum(c):
+            if len(c) < 14:
+                return ('NEUTRAL', 0.0)
+            diffs = [c[i+1]['close'] - c[i]['close'] for i in range(-14, -1)]
+            up = sum(d for d in diffs if d > 0)
+            down = -sum(d for d in diffs if d < 0)
+            if up + down == 0:
+                return ('NEUTRAL', 0.0)
+            rsi = 100 * (up / (up + down))
+            if rsi > 65:
+                return ('CALL', 0.7)
+            if rsi < 35:
+                return ('PUT', 0.7)
+            return ('NEUTRAL', 0.0)
+
+        def strat_open_close_gap(c):
+            last = c[-1]
+            rng = last.get('max', 0) - last.get('min', 0) if last.get('max') and last.get('min') else abs(last['close'] - last['open'])
+            if rng == 0:
+                return ('NEUTRAL', 0.0)
+            body = abs(last['close'] - last['open'])
+            if body / rng > 0.7:
+                return ('CALL' if last['close'] > last['open'] else 'PUT', 0.65)
+            return ('NEUTRAL', 0.0)
+
+        def strat_moving_average_cross(c):
+            if len(c) < 8:
+                return ('NEUTRAL', 0.0)
+            closes = [x['close'] for x in c]
+            ma_fast = mean(closes[-3:])
+            ma_slow = mean(closes[-8:])
+            if ma_fast > ma_slow:
+                return ('CALL', 0.6)
+            if ma_fast < ma_slow:
+                return ('PUT', 0.6)
+            return ('NEUTRAL', 0.0)
+
+        def strat_recent_volatility(c):
+            if len(c) < 6:
+                return ('NEUTRAL', 0.0)
+            last = c[-1]
+            prev = c[-2]
+            move = last['close'] - last['open']
+            prev_move = prev['close'] - prev['open']
+            if abs(move) > abs(prev_move) * 1.8:
+                return ('PUT' if move > 0 else 'CALL', 0.55)
+            return ('NEUTRAL', 0.0)
+
+        strategies = [
+            strat_price_action,
+            strat_two_bar_reversal,
+            strat_trend_strength,
+            strat_volume_spike,
+            strat_count_green_red,
+            strat_momentum,
+            strat_open_close_gap,
+            strat_moving_average_cross,
+            strat_recent_volatility,
+        ]
+
+        votes = {'CALL': 0.0, 'PUT': 0.0, 'NEUTRAL': 0.0}
+        breakdown = []
+
+        # Run strategies in parallel
+        try:
+            with ThreadPoolExecutor(max_workers=min(6, len(strategies))) as executor:
+                futs = {executor.submit(s, candles): s.__name__ for s in strategies}
+                timeout = ParallelTradingConfig.SIGNAL_GENERATION_TIMEOUT
+                for f in as_completed(futs, timeout=timeout):
+                    try:
+                        vote, score = f.result()
+                        votes[vote] += score
+                        breakdown.append({'strategy': futs[f], 'vote': vote, 'score': score})
+                    except Exception:
+                        breakdown.append({'strategy': futs[f], 'vote': 'NEUTRAL', 'score': 0.0})
+        except TimeoutError:
+            pass
+        except Exception:
+            signals = ['CALL', 'PUT', 'NEUTRAL']
+            weights = [0.45, 0.45, 0.10]
+            choice = random.choices(signals, weights=weights)[0]
+            confidence = random.randint(60, 95)
+            generation_time = (time.time() - start_time) * 1000
+            return {
+                'signal': choice,
+                'confidence': confidence,
+                'instrument': instrument,
+                'timestamp': datetime.now().isoformat(),
+                'generation_time_ms': generation_time,
+                'strategy_breakdown': [{'strategy': 'fallback_error', 'vote': choice, 'score': confidence}]
+            }
+
+        # Decide final vote
+        call_score = votes['CALL']
+        put_score = votes['PUT']
+        neutral_score = votes['NEUTRAL']
+
+        score_total = call_score + put_score
+        if score_total <= 0:
+            estimated_win_prob = 0.5
+        else:
+            estimated_win_prob = 0.5 + (call_score - put_score) / (2.0 * (score_total))
+            estimated_win_prob = max(0.0, min(1.0, estimated_win_prob))
+
+        try:
+            inst_manager = self.portfolio_manager.get_instrument_manager(instrument)
+            hist_stats = inst_manager.get_stats()
+            hist_win_rate = hist_stats.get('win_rate', 0) / 100.0 if hist_stats.get('total_trades', 0) > 0 else None
+        except Exception:
+            hist_win_rate = None
+
+        if hist_win_rate is not None:
+            estimated_win_prob = estimated_win_prob * 0.7 + hist_win_rate * 0.3
+
+        if context.min_required_win_rate is not None:
+            safety_margin = 0.02
+            required = context.min_required_win_rate + safety_margin
+            meets_edge = estimated_win_prob >= required
+        else:
+            required = None
+            meets_edge = True
+
+        confidence = int(max(50, min(99, 50 + (abs(call_score - put_score) / (max(1.0, score_total + neutral_score))) * 49)))
+
+        final_vote = 'NEUTRAL'
+        tradeable = True
+        if neutral_score >= (call_score + put_score) * 0.6:
+            final_vote = 'NEUTRAL'
+            tradeable = False
+        else:
+            final_vote = 'CALL' if call_score > put_score else 'PUT'
+            if not meets_edge:
+                tradeable = False
+
+        if context.timing_risk:
+            tradeable = False
+
+        generation_time = (time.time() - start_time) * 1000
 
         return {
-            'signal': signal,
+            'signal': final_vote,
             'confidence': confidence,
             'instrument': instrument,
             'timestamp': datetime.now().isoformat(),
-            'generation_time_ms': generation_time
+            'generation_time_ms': generation_time,
+            'strategy_breakdown': breakdown,
+            'votes': votes,
+            'estimated_win_prob': round(estimated_win_prob, 4),
+            'payout_ratio': context.payout_ratio,
+            'min_required_win_rate': round(required, 4) if required is not None else None,
+            'tradeable': tradeable,
+            'timing_risk': context.timing_risk,
+            'rem_seconds': context.time_to_expiry_seconds
         }
 
     def calculate_position_size(self, instrument: str, confidence: float) -> float:
@@ -610,13 +1097,37 @@ class ParallelTradingBot:
             if not can_trade:
                 return None
 
+            # Get binary option context first
+            context = self.get_binary_option_context(instrument)
+
             # INSTANT signal generation
-            ai_signal = self.get_ai_signal(instrument)
+            ai_signal = self.get_ai_signal(instrument, context)
             if not ai_signal or ai_signal['signal'] == 'NEUTRAL':
                 return None
 
+            # Respect minimum AI confidence
             if ai_signal['confidence'] < ParallelTradingConfig.MIN_AI_CONFIDENCE:
                 return None
+
+            # Respect tradeable flag, timing risk, and minimum payout
+            if not ai_signal.get('tradeable', True):
+                self.logger.info(f"✋ Not tradeable for {instrument}: tradeable={ai_signal.get('tradeable')} timing_risk={ai_signal.get('timing_risk')}")
+                return None
+
+            payout = ai_signal.get('payout_ratio')
+            if payout is not None:
+                try:
+                    if float(payout) < ParallelTradingConfig.MIN_PAYOUT_RATIO:
+                        self.logger.info(f"✋ Skipping {instrument}: payout {payout:.2f} < min {ParallelTradingConfig.MIN_PAYOUT_RATIO:.2f}")
+                        return None
+                except Exception:
+                    pass
+
+            # Log strategy breakdown for auditing
+            try:
+                self.logger.debug(f"STRATEGY_BREAKDOWN [{instrument}]: win_prob={ai_signal.get('estimated_win_prob')} votes={ai_signal.get('votes')} breakdown={ai_signal.get('strategy_breakdown')}")
+            except Exception:
+                pass
 
             amount = self.calculate_position_size(instrument, ai_signal['confidence'])
 
@@ -624,7 +1135,7 @@ class ParallelTradingBot:
                 return None
 
             trade_id = f"{instrument}_{int(time.time()*1000)}"  # Millisecond precision
-            inst_manager.start_trade(trade_id)
+            inst_manager.start_trade(trade_id, payout_ratio=context.payout_ratio)
 
             # INSTANT EXECUTION - No delay
             action = ai_signal['signal'].lower()

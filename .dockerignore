@@ -1,0 +1,108 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+dist
+build
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs (we'll mount these as volumes)
+logs/
+*.log
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Archive and backup
+archive/
+backup/
+*.bak
+*.tmp
+
+# Docker files (don't need these inside the container)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files (we'll mount .env as volume)
+.env.example
+.env.local
+.env.*.local
+
+# Node modules (if any)
+node_modules/
+npm-debug.log
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Large data files
+data/
+*.csv
+*.json
+*.parquet
+
+# Compiled files
+*.pyc
+*.pyo
+*.pyd
+
+# Scripts that don't need to be in container
+*.sh
+!docker-entrypoint.sh
+
+# Old/legacy files
+old/
+legacy/
+deprecated/

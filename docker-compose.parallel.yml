@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # KAEL Autonomous Parallel Trading Bot - Optimized 24/7 Trading
+  # ============================================================================
+  parallel-trading-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.parallel
+    container_name: kael-parallel-trading-bot
+    restart: unless-stopped
+
+    environment:
+      # ========================================================================
+      # IQ OPTION CREDENTIALS (REQUIRED)
+      # ========================================================================
+      - IQOPTION_EMAIL=${IQOPTION_EMAIL}
+      - IQOPTION_PASSWORD=${IQOPTION_PASSWORD}
+      
+      # ========================================================================
+      # TRADING MODE
+      # ========================================================================
+      - TRADING_MODE=${TRADING_MODE:-demo}
+
+      # ========================================================================
+      # PARALLEL TRADING SETTINGS
+      # ========================================================================
+      - MAX_CONCURRENT_INSTRUMENTS=${MAX_CONCURRENT_INSTRUMENTS:-5}
+      - MAX_INSTRUMENTS_TO_MONITOR=${MAX_INSTRUMENTS_TO_MONITOR:-20}
+      - PORTFOLIO_RISK_PERCENT=${PORTFOLIO_RISK_PERCENT:-10.0}
+      - MAX_RISK_PER_INSTRUMENT=${MAX_RISK_PER_INSTRUMENT:-2.5}
+      - INSTRUMENT_SCAN_INTERVAL=${INSTRUMENT_SCAN_INTERVAL:-3}
+      - MAX_WORKER_THREADS=${MAX_WORKER_THREADS:-15}
+      - MAX_TRADES_PER_INSTRUMENT_HOUR=${MAX_TRADES_PER_INSTRUMENT_HOUR:-60}
+
+      # ========================================================================
+      # BINARY OPTIONS SETTINGS
+      # ========================================================================
+      - BASE_TRADE_AMOUNT=${BASE_TRADE_AMOUNT:-1.0}
+      - MAX_TRADE_AMOUNT=${MAX_TRADE_AMOUNT:-10.0}
+      - TRADING_ASSETS=${TRADING_ASSETS:-EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,NZDUSD,EURJPY,GBPJPY,EURGBP,AUDJPY,EURAUD,GBPAUD,USDCHF,EURCAD,GBPCAD,AUDCAD}
+
+      # ========================================================================
+      # RISK MANAGEMENT
+      # ========================================================================
+      - MAX_DAILY_LOSS=${MAX_DAILY_LOSS:-50}
+      - MAX_DAILY_PROFIT=${MAX_DAILY_PROFIT:-100}
+      - MAX_CONSECUTIVE_LOSSES=${MAX_CONSECUTIVE_LOSSES:-5}
+      - MIN_BALANCE=${MIN_BALANCE:-50}
+      - MAX_TRADES_PER_HOUR=${MAX_TRADES_PER_HOUR:-300}
+      - MAX_TRADES_PER_DAY=${MAX_TRADES_PER_DAY:-7200}
+
+      # ========================================================================
+      # AI SIGNAL REQUIREMENTS
+      # ========================================================================
+      - MIN_AI_CONFIDENCE=${MIN_AI_CONFIDENCE:-70}
+
+      # ========================================================================
+      # AI API KEYS (Optional)
+      # ========================================================================
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+
+      # ========================================================================
+      # HEALTH MONITORING
+      # ========================================================================
+      - ENABLE_HEALTH_API=${ENABLE_HEALTH_API:-true}
+      - HEALTH_API_PORT=${HEALTH_API_PORT:-5001}
+
+      # ========================================================================
+      # LOGGING
+      # ========================================================================
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    ports:
+      # Health API endpoint
+      - "5001:5001"
+
+    volumes:
+      # Persist logs outside container
+      - ./logs:/app/app/KAEL/KAEL/logs
+      # Mount .env file (read-only)
+      - ./.env:/app/app/KAEL/KAEL/.env:ro
+
+    networks:
+      - trading-network
+
+    # Health monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  trading-network:
+    driver: bridge

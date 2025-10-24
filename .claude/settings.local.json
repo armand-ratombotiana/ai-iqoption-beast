@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "Bash(awk:*)",
+      "Bash(git log:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(if [ -f \"advanced_trading_system/.env\" ])",
+      "Bash(then echo \"Found in advanced_trading_system/\")",
+      "Bash(cat:*)",
+      "Bash(fi)",
+      "Bash(if [ -f \"advanced_trading_system/.env.example\" ])",
+      "Bash(then echo \"Found .env.example\")",
+      "Bash(env)",
+      "Bash(if [ -f \"$HOME/.iqoption_credentials\" ])",
+      "Bash(then cat \"$HOME/.iqoption_credentials\")",
+      "Bash(echo:*)",
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)",
+      "Bash(if [ -f \".env\" ])",
+      "Bash(then echo \"Found .env\")",
+      "Bash(else echo \"No .env file found\")",
+      "Bash(./run_5min_test.sh:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

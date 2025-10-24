@@ -1,0 +1,53 @@
+# ============================================================================
+# KAEL Autonomous Parallel Trading Bot - Alpine-based Docker Image
+# ============================================================================
+FROM python:3.11-alpine
+
+# Set working directory
+WORKDIR /app/app/KAEL/KAEL
+
+# Install system dependencies (Alpine uses apk instead of apt)
+# Alpine is much faster and more reliable than Debian
+RUN apk add --no-cache \
+    curl \
+    ca-certificates \
+    gcc \
+    musl-dev \
+    linux-headers \
+    libffi-dev \
+    openssl-dev
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the entire project structure
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p logs
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/app/KAEL/KAEL:/app/app/KAEL/KAEL/src
+
+# Verify critical imports
+RUN python -c "from iqoptionapi.stable_api import IQ_Option; print('✅ iqoptionapi verified')" && \
+    python -c "import flask; print('✅ flask verified')" && \
+    python -c "import dotenv; print('✅ python-dotenv verified')" && \
+    python -c "import requests; print('✅ requests verified')"
+
+# Health check - check if the health API is responding
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5001/health || exit 1
+
+# Expose health API port
+EXPOSE 5001
+
+# Run the autonomous parallel trading bot
+CMD ["python", "autonomous_parallel_trading_bot.py"]

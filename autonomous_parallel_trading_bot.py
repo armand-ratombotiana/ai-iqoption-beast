@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 🤖 BINARY-OPTION OPTIMIZED 24/7 PARALLEL TRADING BOT
 Production-Ready Continuous Multi-Asset Trading System with Binary-Option Specifics
@@ -12,6 +13,7 @@ Features:
 - 24/7 continuous operation with auto-recovery
 - Trade multiple instruments simultaneously
 - Advanced portfolio risk management
+- Fictitious $100 balance tracking for realistic testing
 
 CRITICAL: Optimized for binary options with payout/expiration awareness!
 """
@@ -44,10 +46,23 @@ except ImportError:
     DB_LOGGING_ENABLED = False
     print("⚠️  Database logging not available")
 
+# Advanced strategy system with TA-Lib
+USE_ADVANCED_STRATEGIES = os.getenv('USE_ADVANCED_STRATEGIES', 'true').lower() == 'true'
+try:
+    if USE_ADVANCED_STRATEGIES:
+        from strategies.strategy_integrator import create_integrator
+        ADVANCED_STRATEGIES_AVAILABLE = True
+    else:
+        ADVANCED_STRATEGIES_AVAILABLE = False
+except ImportError:
+    ADVANCED_STRATEGIES_AVAILABLE = False
+    if USE_ADVANCED_STRATEGIES:
+        print("⚠️  Advanced strategies requested but not available")
+
 # Add src to path
 sys.path.insert(0, '/app/app/KAEL/KAEL/src')
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from iqoptionapi.stable_api import IQ_Option
 
 
@@ -105,6 +120,10 @@ class ParallelTradingConfig:
     TRADING_MODE = os.getenv('TRADING_MODE', 'demo')
     CONTINUOUS_OPERATION_24_7 = True
 
+    # FICTITIOUS BALANCE TESTING - Set to $100 for realistic testing
+    ENABLE_FICTITIOUS_BALANCE = bool(os.getenv('ENABLE_FICTITIOUS_BALANCE', True))
+    FICTITIOUS_START_BALANCE = float(os.getenv('FICTITIOUS_START_BALANCE', 100.0))
+
     # Parallel Trading Settings - OPTIMIZED to reduce queue delays
     MAX_CONCURRENT_INSTRUMENTS = int(os.getenv('MAX_CONCURRENT_INSTRUMENTS', 3))  # Reduced from 5 to 3
     MAX_INSTRUMENTS_TO_MONITOR = int(os.getenv('MAX_INSTRUMENTS_TO_MONITOR', 20))
@@ -120,78 +139,85 @@ class ParallelTradingConfig:
     # Binary-Option Specific Thresholds - OPTIMIZED for balance
     MIN_PAYOUT_RATIO = float(os.getenv('MIN_PAYOUT_RATIO', 0.65))  # 65% minimum payout (was 70%)
     SAFETY_MARGIN_WIN_RATE = float(os.getenv('SAFETY_MARGIN_WIN_RATE', 0.02))  # 2% safety margin
-    MIN_EXPECTED_VALUE = float(os.getenv('MIN_EXPECTED_VALUE', 0.05))  # 5% minimum EV
-    
-    # Expiration Alignment Settings - OPTIMIZED to prevent "buy late" failures
-    MIN_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MIN_TIME_TO_EXPIRY', 45))  # Min 45s before expiry (was 35s)
-    MAX_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MAX_TIME_TO_EXPIRY', 90))  # Max 90s (1.5min + buffer)
-    EXPIRATION_BUFFER_SECONDS = int(os.getenv('EXPIRATION_BUFFER', 8))  # 8s buffer (was 5s)
-    
-    # Noise Filtering Settings
-    NOISE_THRESHOLD = float(os.getenv('NOISE_THRESHOLD', 0.3))  # 30% noise threshold
-    NEUTRAL_THRESHOLD = float(os.getenv('NEUTRAL_THRESHOLD', 0.6))  # 60% neutral threshold
-    MIN_SIGNAL_STRENGTH = float(os.getenv('MIN_SIGNAL_STRENGTH', 0.15))  # 15% min signal strength
-    
-    # Calibration Settings
-    ENABLE_DYNAMIC_CALIBRATION = bool(os.getenv('ENABLE_CALIBRATION', True))
-    CALIBRATION_INTERVAL_TRADES = int(os.getenv('CALIBRATION_INTERVAL', 20))  # Recalibrate every 20 trades
-    MIN_TRADES_FOR_CALIBRATION = int(os.getenv('MIN_CALIBRATION_TRADES', 10))  # Min 10 trades
-    CALIBRATION_LOOKBACK_WINDOW = int(os.getenv('CALIBRATION_WINDOW', 100))  # Last 100 trades
-    
-    # Kelly Criterion Settings
-    ENABLE_KELLY_SIZING = bool(os.getenv('ENABLE_KELLY', True))
-    KELLY_FRACTION = float(os.getenv('KELLY_FRACTION', 0.25))  # Use 25% of Kelly
-    MAX_KELLY_POSITION = float(os.getenv('MAX_KELLY_POSITION', 5.0))  # Max $5 per Kelly
 
-    # Instrument Pool
+    # Timing thresholds for expiration alignment
+    MIN_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MIN_TIME_TO_EXPIRY_SECONDS', 40))
+    MAX_TIME_TO_EXPIRY_SECONDS = int(os.getenv('MAX_TIME_TO_EXPIRY_SECONDS', 55))
+    EXPIRATION_BUFFER_SECONDS = int(os.getenv('EXPIRATION_BUFFER_SECONDS', 25))
+
+    # Noise filtering
+    NOISE_THRESHOLD = float(os.getenv('NOISE_THRESHOLD', 0.3))
+    NEUTRAL_THRESHOLD = float(os.getenv('NEUTRAL_THRESHOLD', 0.6))
+
+    # Dynamic calibration
+    ENABLE_DYNAMIC_CALIBRATION = bool(os.getenv('ENABLE_DYNAMIC_CALIBRATION', True))
+    MIN_TRADES_FOR_CALIBRATION = int(os.getenv('MIN_TRADES_FOR_CALIBRATION', 10))
+    CALIBRATION_INTERVAL_TRADES = int(os.getenv('CALIBRATION_INTERVAL_TRADES', 5))
+
+    # Kelly sizing
+    ENABLE_KELLY_SIZING = bool(os.getenv('ENABLE_KELLY_SIZING', True))
+    KELLY_FRACTION = float(os.getenv('KELLY_FRACTION', 0.25))
+    MAX_KELLY_POSITION = float(os.getenv('MAX_KELLY_POSITION', 10.0))
+
+    # Martingale
+    MARTINGALE_ENABLED = bool(os.getenv('MARTINGALE_ENABLED', False))
+    MARTINGALE_BASE_MULTIPLIER = float(os.getenv('MARTINGALE_BASE_MULTIPLIER', 2.0))
+    MARTINGALE_MAX_DOUBLINGS = int(os.getenv('MARTINGALE_MAX_DOUBLINGS', 3))
+
+    # Trading Assets
     INSTRUMENT_POOL = os.getenv('TRADING_ASSETS',
-        'EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,NZDUSD,EURJPY,GBPJPY,'
-        'EURGBP,AUDJPY,EURAUD,GBPAUD,USDCHF,EURCAD,GBPCAD,AUDCAD'
+        'EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,NZDUSD,EURJPY,GBPJPY,EURGBP,AUDJPY,EURAUD,GBPAUD,USDCHF,EURCAD,GBPCAD,AUDCAD'
     ).split(',')
 
-    # Portfolio Risk Management
-    TOTAL_PORTFOLIO_RISK_PERCENT = float(os.getenv('PORTFOLIO_RISK_PERCENT', 10.0))
-    MAX_RISK_PER_INSTRUMENT = float(os.getenv('MAX_RISK_PER_INSTRUMENT', 2.5))
-
-    # Daily Limits
+    # Risk Management
     MAX_DAILY_LOSS = float(os.getenv('MAX_DAILY_LOSS', 50))
     MAX_DAILY_PROFIT = float(os.getenv('MAX_DAILY_PROFIT', 100))
     MAX_CONSECUTIVE_LOSSES = int(os.getenv('MAX_CONSECUTIVE_LOSSES', 5))
     MIN_BALANCE = float(os.getenv('MIN_BALANCE', 50))
-
-    # Per-Instrument Limits
-    MAX_TRADES_PER_INSTRUMENT_HOUR = int(os.getenv('MAX_TRADES_PER_INSTRUMENT_HOUR', 60))
-    MIN_SECONDS_BETWEEN_INSTRUMENT_TRADES = 60  # 1 minute
-
-    # Global Limits
-    MAX_TOTAL_TRADES_PER_HOUR = int(os.getenv('MAX_TRADES_PER_HOUR', 300))
+    MAX_TRADES_PER_HOUR = int(os.getenv('MAX_TRADES_PER_HOUR', 300))
+    MAX_TOTAL_TRADES_PER_HOUR = int(os.getenv('MAX_TOTAL_TRADES_PER_HOUR', 300))
     MAX_TOTAL_TRADES_PER_DAY = int(os.getenv('MAX_TRADES_PER_DAY', 7200))
+    MAX_TRADES_PER_INSTRUMENT_HOUR = int(os.getenv('MAX_TRADES_PER_INSTRUMENT_HOUR', 60))
+    MIN_SECONDS_BETWEEN_INSTRUMENT_TRADES = int(os.getenv('MIN_SECONDS_BETWEEN_INSTRUMENT_TRADES', 70))
 
-    # AI Signal Requirements - BALANCED for execution
-    MIN_AI_CONFIDENCE = int(os.getenv('MIN_AI_CONFIDENCE', 60))  # Lowered from 65 to 60
+    # Portfolio risk
+    TOTAL_PORTFOLIO_RISK_PERCENT = float(os.getenv('PORTFOLIO_RISK_PERCENT', 10.0))
+    MAX_RISK_PER_INSTRUMENT = float(os.getenv('MAX_RISK_PER_INSTRUMENT', 2.5))
 
-    # OPTIMIZED TIMING
-    WAIT_FOR_RESULT_SECONDS = 65
-    CONNECTION_CHECK_INTERVAL = 300
-    INSTRUMENT_SCAN_INTERVAL = 3
-    TRADE_EXECUTION_DELAY = 0
-    SIGNAL_GENERATION_TIMEOUT = 0.5
-    MARKET_DATA_CACHE_SECONDS = 2
+    # Timing
+    INSTRUMENT_SCAN_INTERVAL = int(os.getenv('INSTRUMENT_SCAN_INTERVAL', 3))
+    WAIT_FOR_RESULT_SECONDS = int(os.getenv('WAIT_FOR_RESULT_SECONDS', 65))
+    SIGNAL_GENERATION_TIMEOUT = float(os.getenv('SIGNAL_GENERATION_TIMEOUT', 5.0))
 
-    # Thread Pool
+    # Worker threads
     MAX_WORKER_THREADS = int(os.getenv('MAX_WORKER_THREADS', 15))
 
-    # 24/7 Auto-Recovery Settings
+    # Connection health
+    CONNECTION_CHECK_INTERVAL = 300
     AUTO_RECONNECT_ON_FAILURE = True
-    MAX_RECONNECT_ATTEMPTS = 999999
-    RECONNECT_DELAY_SECONDS = 10
+    RECONNECT_DELAY_SECONDS = 60
 
-    # Credentials
+    # Market data caching
+    MARKET_DATA_CACHE_SECONDS = 30
+
+    # API rate limiting
+    API_MIN_INTERVAL = float(os.getenv('API_MIN_INTERVAL', 0.3))
+    API_MAX_RETRIES = int(os.getenv('API_MAX_RETRIES', 3))
+    API_RETRY_BACKOFF = float(os.getenv('API_RETRY_BACKOFF', 1.5))
+
+    # AI Signal Requirements
+    MIN_AI_CONFIDENCE = int(os.getenv('MIN_AI_CONFIDENCE', 60))
+
+    # Logging
+    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+    LOG_DIR = Path('logs')
+
+    # API Credentials
     EMAIL = os.getenv('IQOPTION_EMAIL', '')
     PASSWORD = os.getenv('IQOPTION_PASSWORD', '')
 
     # Health Monitoring
-    ENABLE_HEALTH_API = True
+    ENABLE_HEALTH_API = bool(os.getenv('ENABLE_HEALTH_API', True))
     HEALTH_API_PORT = int(os.getenv('HEALTH_API_PORT', 5001))
 
 
@@ -201,96 +227,140 @@ class ParallelTradingConfig:
 
 def setup_logging():
     """Configure comprehensive logging"""
-    log_dir = Path('logs')
-    log_dir.mkdir(exist_ok=True)
+    ParallelTradingConfig.LOG_DIR.mkdir(exist_ok=True)
 
     detailed_formatter = logging.Formatter(
-        '[%(asctime)s.%(msecs)03d] [%(levelname)s] [%(threadName)s] %(message)s',
+        '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
     file_handler = logging.FileHandler(
-        log_dir / f'binary_bot_{datetime.now().strftime("%Y%m%d")}.log'
+        ParallelTradingConfig.LOG_DIR / f'parallel_bot_{datetime.now().strftime("%Y%m%d")}.log'
     )
     file_handler.setFormatter(detailed_formatter)
     file_handler.setLevel(logging.DEBUG)
 
-    trade_handler = logging.FileHandler(
-        log_dir / f'binary_trades_{datetime.now().strftime("%Y%m%d")}.log'
-    )
-    trade_handler.setFormatter(detailed_formatter)
-    trade_handler.setLevel(logging.INFO)
-    trade_handler.addFilter(lambda record: 'TRADE' in record.getMessage() or 'BINARY' in record.getMessage())
-
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(detailed_formatter)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(getattr(logging, ParallelTradingConfig.LOG_LEVEL))
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
-    root_logger.addHandler(trade_handler)
     root_logger.addHandler(console_handler)
 
     return logging.getLogger(__name__)
 
 
 # =============================================================================
-# BINARY-OPTION CALCULATOR
+# BINARY OPTION CALCULATOR
 # =============================================================================
 
 class BinaryOptionCalculator:
-    """Calculate binary-option specific metrics"""
-    
+    """Binary option calculations for win rates and expected value"""
+
     @staticmethod
     def calculate_breakeven_win_rate(payout_ratio: float) -> float:
         """Calculate breakeven win rate for given payout"""
         return 1.0 / (1.0 + payout_ratio)
-    
+
     @staticmethod
     def calculate_required_win_rate(payout_ratio: float, safety_margin: float = 0.02) -> float:
         """Calculate required win rate with safety margin"""
         breakeven = BinaryOptionCalculator.calculate_breakeven_win_rate(payout_ratio)
         return breakeven + safety_margin
-    
+
     @staticmethod
-    def calculate_expected_value(win_prob: float, payout_ratio: float, amount: float) -> float:
-        """Calculate expected value of trade"""
-        win_amount = amount * payout_ratio
-        loss_amount = amount
-        ev = (win_prob * win_amount) - ((1 - win_prob) * loss_amount)
-        return ev
-    
+    def calculate_expected_value(win_rate: float, payout_ratio: float, amount: float = 1.0) -> float:
+        """Calculate expected value of a trade"""
+        return (win_rate * payout_ratio * amount) - ((1 - win_rate) * amount)
+
     @staticmethod
-    def calculate_kelly_fraction(win_prob: float, payout_ratio: float) -> float:
-        """Calculate Kelly Criterion fraction"""
+    def calculate_kelly_fraction(win_rate: float, payout_ratio: float) -> float:
+        """Calculate Kelly fraction for position sizing"""
         if payout_ratio <= 0:
             return 0.0
-        kelly = (win_prob * (1 + payout_ratio) - 1) / payout_ratio
-        return max(0.0, kelly)
-    
+        return max(0, (win_rate * (1 + payout_ratio) - 1) / payout_ratio)
+
     @staticmethod
     def calculate_sharpe_ratio(returns: List[float], risk_free_rate: float = 0.0) -> float:
         """Calculate Sharpe ratio from returns"""
         if not returns or len(returns) < 2:
             return 0.0
-        
         import statistics
         mean_return = statistics.mean(returns)
         std_return = statistics.stdev(returns)
-        
         if std_return == 0:
             return 0.0
-        
         return (mean_return - risk_free_rate) / std_return
 
 
 # =============================================================================
-# ENHANCED INSTRUMENT STATE MANAGER WITH CALIBRATION
+# API CLIENT WITH RATE LIMITING
+# =============================================================================
+
+class ApiClient:
+    """Wrapper for IQ Option API with rate limiting and retries"""
+
+    def __init__(self, api, min_interval: float = 0.3, max_retries: int = 3, backoff_base: float = 1.5):
+        self.api = api
+        self.min_interval = min_interval
+        self.max_retries = max_retries
+        self.backoff_base = backoff_base
+        self.last_call = 0
+        self.lock = threading.Lock()
+
+    def _rate_limit(self):
+        """Enforce minimum interval between API calls"""
+        with self.lock:
+            elapsed = time.time() - self.last_call
+            if elapsed < self.min_interval:
+                time.sleep(self.min_interval - elapsed)
+            self.last_call = time.time()
+
+    def _retry_call(self, func, *args, **kwargs):
+        """Retry API call with exponential backoff"""
+        for attempt in range(self.max_retries):
+            try:
+                self._rate_limit()
+                return func(*args, **kwargs)
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    raise
+                time.sleep(self.backoff_base ** attempt)
+        return None
+
+    def get_balance(self):
+        return self._retry_call(self.api.get_balance)
+
+    def get_candles(self, instrument, size, count, timestamp):
+        return self._retry_call(self.api.get_candles, instrument, size, count, timestamp)
+
+    def get_all_profit(self):
+        return self._retry_call(self.api.get_all_profit)
+
+    def get_remaning(self, duration):
+        return self._retry_call(self.api.get_remaning, duration)
+
+    def buy(self, amount, instrument, action, duration):
+        return self._retry_call(self.api.buy, amount, instrument, action, duration)
+
+    def check_win_v3(self, order_id):
+        return self._retry_call(self.api.check_win_v3, order_id)
+
+    def check_connect(self):
+        return self._retry_call(self.api.check_connect)
+
+    def get_all_open_time(self):
+        return self._retry_call(self.api.get_all_open_time)
+
+
+# =============================================================================
+# INSTRUMENT STATE MANAGER
 # =============================================================================
 
 class InstrumentStateManager:
-    """Manage state for individual instruments with calibration"""
+    """Thread-safe state manager for individual instruments"""
 
     def __init__(self, instrument: str):
         self.instrument = instrument
@@ -521,7 +591,13 @@ class PortfolioStateManager:
             'total_uptime_seconds': 0,
             'total_trades_all_time': 0,
             'avg_scan_time_ms': 0,
-            'avg_execution_time_ms': 0
+            'avg_execution_time_ms': 0,
+            # Fictitious balance tracking
+            'fictitious_balance_enabled': ParallelTradingConfig.ENABLE_FICTITIOUS_BALANCE,
+            'fictitious_balance': ParallelTradingConfig.FICTITIOUS_START_BALANCE,
+            'fictitious_start_balance': ParallelTradingConfig.FICTITIOUS_START_BALANCE,
+            'real_balance': 0.0,
+            'real_start_balance': 0.0
         }
 
     def get_instrument_manager(self, instrument: str) -> InstrumentStateManager:
@@ -555,6 +631,20 @@ class PortfolioStateManager:
                 self.state['hour_start'] = current_hour
                 return True
         return False
+
+    def update_balance(self, real_balance: float, profit: float = 0.0):
+        """Update both real and fictitious balances"""
+        with self.lock:
+            self.state['real_balance'] = real_balance
+            
+            if self.state['fictitious_balance_enabled']:
+                # Update fictitious balance with P&L
+                self.state['fictitious_balance'] += profit
+                # Use fictitious balance for trading decisions
+                self.state['current_balance'] = self.state['fictitious_balance']
+            else:
+                # Use real balance
+                self.state['current_balance'] = real_balance
 
     def can_trade_portfolio(self) -> tuple[bool, str]:
         """Check portfolio-wide trading constraints"""
@@ -632,7 +722,7 @@ class PortfolioStateManager:
 
             instrument_stats.sort(key=lambda x: x['profit'], reverse=True)
 
-            return {
+            stats = {
                 'balance': self.state['current_balance'],
                 'start_balance': self.state['start_balance'],
                 'daily_profit': self.state['daily_profit'],
@@ -653,6 +743,23 @@ class PortfolioStateManager:
                 'avg_execution_time_ms': self.state['avg_execution_time_ms']
             }
 
+            # Add fictitious balance info if enabled
+            if self.state['fictitious_balance_enabled']:
+                stats['fictitious_balance_mode'] = True
+                stats['fictitious_balance'] = round(self.state['fictitious_balance'], 2)
+                stats['fictitious_start_balance'] = round(self.state['fictitious_start_balance'], 2)
+                stats['fictitious_pnl'] = round(self.state['fictitious_balance'] - self.state['fictitious_start_balance'], 2)
+                stats['fictitious_pnl_percent'] = round(
+                    ((self.state['fictitious_balance'] - self.state['fictitious_start_balance']) / 
+                     self.state['fictitious_start_balance']) * 100, 2
+                )
+                stats['real_balance'] = round(self.state['real_balance'], 2)
+                stats['real_start_balance'] = round(self.state['real_start_balance'], 2)
+            else:
+                stats['fictitious_balance_mode'] = False
+
+            return stats
+
 
 # =============================================================================
 # BINARY-OPTION OPTIMIZED TRADING BOT
@@ -665,6 +772,7 @@ class ParallelTradingBot:
         self.logger = logger
         self.portfolio_manager = PortfolioStateManager()
         self.api: Optional[IQ_Option] = None
+        self.api_client = None
         self.running = False
         self.shutdown_requested = False
         self.executor = ThreadPoolExecutor(max_workers=ParallelTradingConfig.MAX_WORKER_THREADS)
@@ -679,6 +787,16 @@ class ParallelTradingBot:
                 self.logger.info("✅ Database logging enabled")
             except Exception as e:
                 self.logger.warning(f"⚠️  Database logging disabled: {e}")
+
+        # Advanced strategy system
+        self.strategy_integrator = None
+        if ADVANCED_STRATEGIES_AVAILABLE:
+            try:
+                risk_profile = os.getenv('STRATEGY_RISK_PROFILE', 'moderate')
+                self.strategy_integrator = create_integrator(risk_profile)
+                self.logger.info(f"✅ Advanced strategies enabled (profile: {risk_profile})")
+            except Exception as e:
+                self.logger.warning(f"⚠️  Advanced strategies disabled: {e}")
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
@@ -728,13 +846,44 @@ class ParallelTradingBot:
                     self.api.change_balance('PRACTICE')
                     self.logger.info("✅ Demo mode")
 
-                balance = self.api.get_balance()
-                self.portfolio_manager.state['current_balance'] = balance
-                self.portfolio_manager.state['start_balance'] = balance
+                real_balance = self.api.get_balance()
+                
+                # Initialize balances
+                if ParallelTradingConfig.ENABLE_FICTITIOUS_BALANCE:
+                    # Set fictitious balance for testing
+                    self.portfolio_manager.state['real_balance'] = real_balance
+                    self.portfolio_manager.state['real_start_balance'] = real_balance
+                    self.portfolio_manager.state['fictitious_balance'] = ParallelTradingConfig.FICTITIOUS_START_BALANCE
+                    self.portfolio_manager.state['fictitious_start_balance'] = ParallelTradingConfig.FICTITIOUS_START_BALANCE
+                    self.portfolio_manager.state['current_balance'] = ParallelTradingConfig.FICTITIOUS_START_BALANCE
+                    self.portfolio_manager.state['start_balance'] = ParallelTradingConfig.FICTITIOUS_START_BALANCE
+                    
+                    self.logger.info("="*80)
+                    self.logger.info("💰 FICTITIOUS BALANCE MODE ENABLED")
+                    self.logger.info(f"   Testing Balance: ${ParallelTradingConfig.FICTITIOUS_START_BALANCE:.2f}")
+                    self.logger.info(f"   Real Balance: ${real_balance:.2f}")
+                    self.logger.info("   P&L will be tracked from $100 baseline")
+                    self.logger.info("="*80)
+                else:
+                    # Use real balance
+                    self.portfolio_manager.state['current_balance'] = real_balance
+                    self.portfolio_manager.state['start_balance'] = real_balance
+                
                 self.portfolio_manager.state['api_connected'] = True
                 self.portfolio_manager.state['last_connection_check'] = datetime.now()
 
-                self.logger.info(f"✅ Connected. Balance: ${balance:.2f}")
+                # Wrap API with a rate-limited client to avoid hitting broker rate limits
+                try:
+                    self.api_client = ApiClient(
+                        self.api,
+                        min_interval=ParallelTradingConfig.API_MIN_INTERVAL,
+                        max_retries=ParallelTradingConfig.API_MAX_RETRIES,
+                        backoff_base=ParallelTradingConfig.API_RETRY_BACKOFF
+                    )
+                except Exception:
+                    self.api_client = None
+
+                self.logger.info(f"✅ Connected. Trading Balance: ${self.portfolio_manager.state['current_balance']:.2f}")
                 return True
 
             except Exception as e:
@@ -753,12 +902,30 @@ class ParallelTradingBot:
             if (datetime.now() - last_check).total_seconds() < ParallelTradingConfig.CONNECTION_CHECK_INTERVAL:
                 return True
 
-            if not self.api or not self.api.check_connect():
+            # Prefer the rate-limited client when available
+            connected = True
+            try:
+                if self.api_client:
+                    connected = bool(self.api_client.check_connect())
+                else:
+                    connected = bool(self.api.check_connect())
+            except Exception:
+                connected = False
+
+            if not self.api or not connected:
                 self.logger.warning("⚠️  Reconnecting...")
                 self.portfolio_manager.state['reconnect_count'] += 1
                 return self.connect_to_broker()
 
-            balance = self.api.get_balance()
+            try:
+                if self.api_client:
+                    balance = self.api_client.get_balance()
+                else:
+                    balance = self.api.get_balance()
+            except Exception as e:
+                self.logger.error(f"❌ Failed to fetch balance during health check: {e}")
+                return False
+
             self.portfolio_manager.state['current_balance'] = balance
             self.portfolio_manager.state['last_connection_check'] = datetime.now()
 
@@ -777,7 +944,10 @@ class ParallelTradingBot:
                     if (datetime.now() - cache_time).total_seconds() < ParallelTradingConfig.MARKET_DATA_CACHE_SECONDS:
                         return instruments
 
-            open_markets = self.api.get_all_open_time()
+            if self.api_client:
+                open_markets = self.api_client.get_all_open_time()
+            else:
+                open_markets = self.api.get_all_open_time()
             if not open_markets or 'binary' not in open_markets:
                 return []
 
@@ -807,8 +977,11 @@ class ParallelTradingBot:
         
         try:
             # Get payout ratio
-            if self.api and hasattr(self.api, 'get_all_profit'):
-                all_profit = self.api.get_all_profit()
+            if (self.api_client and hasattr(self.api_client, 'get_all_profit')) or (self.api and hasattr(self.api, 'get_all_profit')):
+                try:
+                    all_profit = self.api_client.get_all_profit() if self.api_client else self.api.get_all_profit()
+                except Exception:
+                    all_profit = self.api.get_all_profit() if self.api and hasattr(self.api, 'get_all_profit') else {}
                 base_name = instrument.split('-')[0]
                 profits = all_profit.get(base_name) or all_profit.get(instrument) or {}
                 payout_ratio = profits.get('binary') if isinstance(profits, dict) else None
@@ -837,8 +1010,11 @@ class ParallelTradingBot:
         
         try:
             # Get time to expiry
-            if self.api and hasattr(self.api, 'get_remaning'):
-                rem = self.api.get_remaning(ParallelTradingConfig.BINARY_OPTION_DURATION)
+            if (self.api_client and hasattr(self.api_client, 'get_remaning')) or (self.api and hasattr(self.api, 'get_remaning')):
+                try:
+                    rem = self.api_client.get_remaning(ParallelTradingConfig.BINARY_OPTION_DURATION) if self.api_client else self.api.get_remaning(ParallelTradingConfig.BINARY_OPTION_DURATION)
+                except Exception:
+                    rem = None
                 if isinstance(rem, (list, tuple)) and len(rem) > 0:
                     rem_seconds = int(rem[0]) if isinstance(rem[0], (int, float)) else int(rem[1])
                 else:
@@ -884,7 +1060,11 @@ class ParallelTradingBot:
         candles = None
         try:
             if self.api is not None:
-                raw = self.api.get_candles(instrument, 60, 60, time.time())
+                try:
+                    raw = self.api_client.get_candles(instrument, 60, 60, time.time()) if self.api_client else self.api.get_candles(instrument, 60, 60, time.time())
+                except Exception:
+                    raw = None
+
                 if raw and isinstance(raw, list) and len(raw) > 5:
                     candles = raw
         except Exception:
@@ -941,6 +1121,35 @@ class ParallelTradingBot:
                 return ('PUT', 0.7)
             return ('NEUTRAL', 0.0)
 
+        # Very simple candle-count strategy specialized for binary options
+        def strat_simple_candle_count(c):
+            """Count green vs red candles in a short window and vote accordingly.
+
+            Rules:
+            - Use the last N candles (default 10)
+            - If greens >= reds + 3 -> strong CALL
+            - If reds >= greens + 3 -> strong PUT
+            - Otherwise NEUTRAL
+            Score is proportional to the margin (capped)
+            """
+            window = c[-10:]
+            total = len(window)
+            if total == 0:
+                return ('NEUTRAL', 0.0)
+            greens = sum(1 for x in window if x['close'] > x['open'])
+            reds = sum(1 for x in window if x['close'] < x['open'])
+            margin = greens - reds
+            # Strong directional bias threshold
+            threshold = 3
+            if margin >= threshold:
+                # score scaled from 0.6 up to 0.95
+                score = min(0.95, 0.6 + (margin / total))
+                return ('CALL', round(score, 2))
+            if margin <= -threshold:
+                score = min(0.95, 0.6 + (abs(margin) / total))
+                return ('PUT', round(score, 2))
+            return ('NEUTRAL', 0.0)
+
         def strat_momentum(c):
             if len(c) < 14:
                 return ('NEUTRAL', 0.0)
@@ -989,16 +1198,37 @@ class ParallelTradingBot:
                 return ('PUT' if move > 0 else 'CALL', 0.55)
             return ('NEUTRAL', 0.0)
 
+        # Use advanced strategies if available, otherwise fall back to simple strategies
+        if self.strategy_integrator is not None:
+            try:
+                # Use advanced strategy engine
+                direction, confidence, breakdown = self.strategy_integrator.analyze_instrument(candles)
+
+                # Convert to expected format
+                if direction == 'NEUTRAL':
+                    selected_signal = 'NEUTRAL'
+                    selected_confidence = 0
+                else:
+                    selected_signal = direction
+                    selected_confidence = int(confidence * 100)
+
+                generation_time = (time.time() - start_time) * 1000
+
+                return {
+                    'signal': selected_signal,
+                    'confidence': selected_confidence,
+                    'instrument': instrument,
+                    'timestamp': datetime.now().isoformat(),
+                    'generation_time_ms': generation_time,
+                    'strategy_breakdown': breakdown
+                }
+            except Exception as e:
+                self.logger.error(f"Advanced strategy error: {e}", exc_info=True)
+                # Fall through to simple strategies
+
+        # Simple strategy fallback (original implementation)
         strategies = [
-            strat_price_action,
-            strat_two_bar_reversal,
-            strat_trend_strength,
-            strat_volume_spike,
-            strat_count_green_red,
-            strat_momentum,
-            strat_open_close_gap,
-            strat_moving_average_cross,
-            strat_recent_volatility,
+            strat_simple_candle_count,
         ]
 
         votes = {'CALL': 0.0, 'PUT': 0.0, 'NEUTRAL': 0.0}
@@ -1102,8 +1332,42 @@ class ParallelTradingBot:
         max_per_instrument = balance * (ParallelTradingConfig.MAX_RISK_PER_INSTRUMENT / 100)
         amount = max_per_instrument * (confidence / 100)
         amount = max(ParallelTradingConfig.MIN_TRADE_AMOUNT, amount)
+        # Use Kelly sizing when enabled and instrument has calibration
+        try:
+            inst_manager = self.portfolio_manager.get_instrument_manager(instrument)
+            inst_kelly = getattr(inst_manager.calibration, 'kelly_fraction', 0.0) or 0.0
+        except Exception:
+            inst_kelly = 0.0
+
+        if ParallelTradingConfig.ENABLE_KELLY_SIZING and inst_kelly > 0:
+            # conservative fraction of Kelly
+            kelly_alloc = balance * inst_kelly * ParallelTradingConfig.KELLY_FRACTION
+            # cap Kelly allocation
+            kelly_alloc = min(kelly_alloc, ParallelTradingConfig.MAX_KELLY_POSITION)
+            amount = max(amount, round(kelly_alloc, 2))
+
+        # Optional Martingale sizing: increase stake after consecutive losses
+        try:
+            if ParallelTradingConfig.MARTINGALE_ENABLED:
+                losses = 0
+                try:
+                    losses = int(getattr(self.portfolio_manager.get_instrument_manager(instrument), 'state', {}).get('consecutive_losses', 0) or 0)
+                except Exception:
+                    losses = 0
+
+                if losses > 0:
+                    doublings = min(losses, ParallelTradingConfig.MARTINGALE_MAX_DOUBLINGS)
+                    multiplier = (ParallelTradingConfig.MARTINGALE_BASE_MULTIPLIER ** doublings)
+                    self.logger.debug("Martingale multiplier for %s: losses=%s doublings=%s multiplier=%s", instrument, losses, doublings, multiplier)
+                    amount = amount * multiplier
+        except Exception:
+            # If martingale logic fails, fall back to base amount
+            pass
+
+        # Enforce global caps
         amount = min(ParallelTradingConfig.MAX_TRADE_AMOUNT, amount)
-        return round(amount, 2)
+        amount = round(amount, 2)
+        return amount
 
     def execute_instrument_trade(self, instrument: str) -> Optional[Dict]:
         """Execute trade with minimal delay"""
@@ -1156,13 +1420,122 @@ class ParallelTradingBot:
             trade_id = f"{instrument}_{int(time.time()*1000)}"  # Millisecond precision
             inst_manager.start_trade(trade_id, payout_ratio=context.payout_ratio)
 
+            # Determine which strategy contributed most to the final decision
+            selected_strategy = None
+            try:
+                breakdown = ai_signal.get('strategy_breakdown') or []
+                final_vote = ai_signal.get('signal')
+                # Prefer the highest-scoring strategy that voted for the final direction
+                candidates = [b for b in breakdown if b.get('vote') == final_vote]
+                if candidates:
+                    best = max(candidates, key=lambda x: x.get('score', 0))
+                    selected_strategy = best.get('strategy')
+                else:
+                    # Fallback: pick highest score overall
+                    if breakdown:
+                        best = max(breakdown, key=lambda x: x.get('score', 0))
+                        selected_strategy = best.get('strategy')
+            except Exception:
+                selected_strategy = None
+
+            # Prepare trade entry for logging (DB)
+            if self.trade_logger:
+                try:
+                    trade_entry = {
+                        'trade_id': trade_id,
+                        'instrument': instrument,
+                        'direction': ai_signal.get('signal'),
+                        'amount': amount,
+                        'duration': ParallelTradingConfig.BINARY_OPTION_DURATION,
+                        'payout_ratio': context.payout_ratio,
+                        'entry_time': datetime.now().isoformat(),
+                        'expiration_time': (datetime.now() + timedelta(seconds=ParallelTradingConfig.BINARY_OPTION_DURATION)).isoformat(),
+                        'execution_time_ms': None,
+                        'result': 'PENDING',
+                        'profit': 0.0,
+                        'entry_price': None,
+                        'exit_price': None,
+                        'price_change': None,
+                        'mode': ParallelTradingConfig.TRADING_MODE,
+                        'balance_before': self.portfolio_manager.state.get('current_balance'),
+                        'balance_after': None,
+                        'notes': None,
+                        'selected_strategy': selected_strategy,
+                        # store the breakdown as a native structure; DB manager will serialize as needed
+                        'strategy_breakdown': ai_signal.get('strategy_breakdown', [])
+                    }
+                    self.trade_logger.log_trade_entry(trade_entry)
+                except Exception:
+                    pass
+
             # INSTANT EXECUTION - No delay
             action = ai_signal['signal'].lower()
             
             trade_entry_time = datetime.now()
             self.logger.info(f"⚡ INSTANT TRADE [{instrument}]: {ai_signal['signal']} ${amount} @ {ai_signal['confidence']}% | Entry: {trade_entry_time.strftime('%H:%M:%S.%f')[:-3]}")
 
-            status, order_id = self.api.buy(amount, instrument, action, ParallelTradingConfig.BINARY_OPTION_DURATION)
+            # Re-check expiry just before buy to avoid "buy late" failures
+            try:
+                remv = None
+                if (self.api_client and hasattr(self.api_client, 'get_remaning')) or (self.api and hasattr(self.api, 'get_remaning')):
+                    try:
+                        remv = self.api_client.get_remaning(ParallelTradingConfig.BINARY_OPTION_DURATION) if self.api_client else self.api.get_remaning(ParallelTradingConfig.BINARY_OPTION_DURATION)
+                    except Exception:
+                        remv = None
+                rem_check = None
+                if remv is not None:
+                    if isinstance(remv, (list, tuple)) and len(remv) > 0:
+                        rem_check = int(remv[0])
+                    else:
+                        rem_check = int(remv)
+
+                if rem_check is not None and rem_check < ParallelTradingConfig.EXPIRATION_BUFFER_SECONDS:
+                    self.logger.warning(f"⚠️ Skipping {instrument}: remaining {rem_check}s < buffer {ParallelTradingConfig.EXPIRATION_BUFFER_SECONDS}s (avoid late buy)")
+                    inst_manager.complete_trade(False, 0, 0)
+                    self.portfolio_manager.release_risk(instrument, amount)
+                    return None
+            except Exception:
+                # If unable to check remaining time, proceed but protect with a retry below
+                rem_check = None
+
+            # Attempt to buy; if it fails due to timing, perform one quick retry if timing still allows
+            status = False
+            order_id = None
+            try:
+                if self.api_client:
+                    status, order_id = self.api_client.buy(amount, instrument, action, ParallelTradingConfig.BINARY_OPTION_DURATION)
+                else:
+                    status, order_id = self.api.buy(amount, instrument, action, ParallelTradingConfig.BINARY_OPTION_DURATION)
+                if not status or order_id is None:
+                    # quick re-check of remaining time and a single retry
+                    try:
+                        remv2 = None
+                        if (self.api_client and hasattr(self.api_client, 'get_remaning')) or (self.api and hasattr(self.api, 'get_remaning')):
+                            remv2 = self.api_client.get_remaning(ParallelTradingConfig.BINARY_OPTION_DURATION) if self.api_client else self.api.get_remaning(ParallelTradingConfig.BINARY_OPTION_DURATION)
+
+                        if isinstance(remv2, (list, tuple)) and len(remv2) > 0:
+                            rem2 = int(remv2[0])
+                        else:
+                            rem2 = int(remv2) if remv2 is not None else None
+                    except Exception:
+                        rem2 = None
+
+                    if rem2 is None or rem2 >= ParallelTradingConfig.EXPIRATION_BUFFER_SECONDS:
+                        time.sleep(0.12)
+                        try:
+                            if self.api_client:
+                                status2, order_id2 = self.api_client.buy(amount, instrument, action, ParallelTradingConfig.BINARY_OPTION_DURATION)
+                            else:
+                                status2, order_id2 = self.api.buy(amount, instrument, action, ParallelTradingConfig.BINARY_OPTION_DURATION)
+
+                            if status2 and order_id2:
+                                status, order_id = status2, order_id2
+                        except Exception as e:
+                            self.logger.debug(f"Retry buy exception for {instrument}: {e}")
+
+            except Exception as e:
+                self.logger.error(f"❌ [{instrument}] buy error: {e}")
+                status, order_id = False, None
 
             if not status or order_id is None:
                 self.logger.error(f"❌ [{instrument}] Failed")
@@ -1180,10 +1553,14 @@ class ParallelTradingBot:
             profit = None
             for attempt in range(20):  # Reduced from 30 to 20
                 try:
-                    profit = self.api.check_win_v3(order_id)
+                    if self.api_client:
+                        profit = self.api_client.check_win_v3(order_id)
+                    else:
+                        profit = self.api.check_win_v3(order_id)
+
                     if profit is not None:
                         break
-                except:
+                except Exception:
                     pass
                 time.sleep(0.5)  # Reduced from 1 to 0.5 seconds
 
@@ -1200,7 +1577,10 @@ class ParallelTradingBot:
             self.portfolio_manager.update_trade_result(profit, won)
             self.portfolio_manager.release_risk(instrument, amount)
 
-            new_balance = self.api.get_balance()
+            try:
+                new_balance = self.api_client.get_balance() if self.api_client else self.api.get_balance()
+            except Exception:
+                new_balance = self.portfolio_manager.state.get('current_balance', ParallelTradingConfig.FICTITIOUS_START_BALANCE)
             self.portfolio_manager.state['current_balance'] = new_balance
 
             self.logger.info("="*80)
@@ -1364,12 +1744,62 @@ def create_health_api(bot: ParallelTradingBot):
     def statistics():
         return jsonify(bot.get_statistics())
 
+    @app.route('/recent_trades', methods=['GET'])
+    def recent_trades():
+        """Return recent trades including selected_strategy and breakdown"""
+        limit = int(request.args.get('limit', 100))
+        if bot.trade_logger and hasattr(bot.trade_logger, 'db'):
+            try:
+                trades = bot.trade_logger.db.get_recent_trades(limit)
+                # Ensure JSON-serializable strategy_breakdown
+                for t in trades:
+                    if isinstance(t.get('strategy_breakdown'), str):
+                        try:
+                            t['strategy_breakdown'] = json.loads(t['strategy_breakdown'])
+                        except Exception:
+                            pass
+                return jsonify({'trades': trades})
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'database logging not available'}), 503
+
+    @app.route('/strategy_stats', methods=['GET'])
+    def strategy_stats():
+        """Return aggregated stats by strategy"""
+        limit = int(request.args.get('limit', 100))
+        if bot.trade_logger and hasattr(bot.trade_logger, 'db'):
+            try:
+                stats = bot.trade_logger.db.get_strategy_stats(limit)
+                return jsonify({'strategy_stats': stats})
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'database logging not available'}), 503
+
     @app.route('/stop', methods=['POST'])
     def stop():
         bot.stop()
         return jsonify({'message': 'Shutdown initiated'})
 
     return app
+
+
+def start_health_server(app: Flask, logger: logging.Logger):
+    """Start the health API using a production server when possible.
+
+    Prefer waitress if installed, otherwise fallback to Flask's threaded server.
+    """
+    try:
+        # Prefer waitress (lightweight and production-ready for WSGI)
+        import waitress  # type: ignore
+        logger.info("ℹ️  Starting health API with waitress")
+        waitress.serve(app, host='0.0.0.0', port=ParallelTradingConfig.HEALTH_API_PORT)
+        return
+    except Exception:
+        logger.debug("waitress not available, falling back to Flask development server")
+
+    # Fallback: use threaded Flask server but log a clear warning
+    logger.warning("⚠️  Health API running with Flask's built-in server. For production, run with waitress/gunicorn.")
+    app.run(host='0.0.0.0', port=ParallelTradingConfig.HEALTH_API_PORT, debug=False, use_reloader=False, threaded=True)
 
 
 # =============================================================================
@@ -1403,12 +1833,7 @@ def main():
     if ParallelTradingConfig.ENABLE_HEALTH_API:
         health_app = create_health_api(bot)
         health_thread = threading.Thread(
-            target=lambda: health_app.run(
-                host='0.0.0.0',
-                port=ParallelTradingConfig.HEALTH_API_PORT,
-                debug=False,
-                use_reloader=False
-            ),
+            target=lambda: start_health_server(health_app, logger),
             daemon=True
         )
         health_thread.start()

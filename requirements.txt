@@ -22,14 +22,24 @@ gunicorn==21.2.0           # Production WSGI server
 
 # Database (SQLite is built-in to Python)
 # For production, consider PostgreSQL:
-# psycopg2-binary>=2.9.0
+psycopg2-binary>=2.9.6
+waitress>=2.2.0
 
-# Technical Analysis (Optional but recommended)
-# ta-lib requires system dependencies: sudo apt-get install ta-lib
-# ta>=0.11.0                # Technical Analysis Library (Python wrapper)
+# Technical Analysis (Required for advanced strategies)
+# ta-lib requires system dependencies:
+# Linux: sudo apt-get install ta-lib
+# Mac: brew install ta-lib
+# Windows: Download from https://github.com/cgohlke/talib-build/releases
+TA-Lib>=0.4.28            # Technical Analysis Library with 150+ indicators
 
 # Data handling
 pandas>=2.0.0              # Data manipulation
+# pandas-ta provides many technical indicators in pure Python (preferred over ta-lib for portability)
+# Use the PyPI package `pandas-ta` (import as `pandas_ta`). Prefer a released version compatible with Python 3.11.
+# pandas-ta>=0.3.14
+# pandas-ta removed from automated image build due to binary/wheel availability on alpine.
+# If you need pandas-ta, install it in a compatible environment (Debian-based image or local venv):
+# pip install pandas-ta
 # matplotlib>=3.7.0        # Plotting (optional)
 
 # Testing

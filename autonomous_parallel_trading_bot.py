@@ -1580,15 +1580,21 @@ class ParallelTradingBot:
             self.portfolio_manager.update_trade_result(profit, won)
             self.portfolio_manager.release_risk(instrument, amount)
 
+            # Update balances correctly
             try:
-                new_balance = self.api_client.get_balance() if self.api_client else self.api.get_balance()
+                real_balance = self.api_client.get_balance() if self.api_client else self.api.get_balance()
             except Exception:
-                new_balance = self.portfolio_manager.state.get('current_balance', ParallelTradingConfig.FICTITIOUS_START_BALANCE)
-            self.portfolio_manager.state['current_balance'] = new_balance
+                real_balance = self.portfolio_manager.state.get('real_balance', 10000.0)
+
+            # Update both real and fictitious balances
+            self.portfolio_manager.update_balance(real_balance, profit)
+
+            # Get the current balance (will be fictitious if enabled, otherwise real)
+            current_balance = self.portfolio_manager.state['current_balance']
 
             self.logger.info("="*80)
             self.logger.info(f"📈 RESULT [{instrument}]: {result_str} | P/L: ${profit:+.2f} | Exec: {execution_time_ms}ms")
-            self.logger.info(f"   Balance: ${new_balance:.2f} | Daily: ${self.portfolio_manager.state['daily_profit'] - self.portfolio_manager.state['daily_loss']:+.2f}")
+            self.logger.info(f"   Balance: ${current_balance:.2f} | Daily: ${self.portfolio_manager.state['daily_profit'] - self.portfolio_manager.state['daily_loss']:+.2f}")
             self.logger.info("="*80)
 
             return {

@@ -6,6 +6,7 @@ Handles all database connections and queries
 import sqlite3
 import os
 import logging
+import threading
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ class DatabaseManager:
         self.db_path = db_path
         self.logger = logging.getLogger(self.__class__.__name__)
         self.connection: Optional[sqlite3.Connection] = None
+        self._lock = threading.Lock()  # Thread-safe lock for database writes
 
         # Create database directory if needed
         db_dir = Path(db_path).parent
@@ -80,7 +82,7 @@ class DatabaseManager:
 
     def execute_query(self, query: str, params: tuple = ()) -> sqlite3.Cursor:
         """
-        Execute a query with parameters
+        Execute a query with parameters (thread-safe)
 
         Args:
             query: SQL query string
@@ -89,11 +91,12 @@ class DatabaseManager:
         Returns:
             Cursor with results
         """
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        conn.commit()
-        return cursor
+        with self._lock:  # Thread-safe database writes
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor
 
     def fetch_one(self, query: str, params: tuple = ()) -> Optional[Dict]:
         """

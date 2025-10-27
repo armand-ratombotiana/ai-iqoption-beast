@@ -33,7 +33,9 @@
       "Bash(sqlite3:*)",
       "Bash(/dev/null)",
       "Bash(powershell.exe -Command \"Start-Process ''C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe''\")",
-      "Bash(start http://localhost:5001/dashboard)"
+      "Bash(start http://localhost:5001/dashboard)",
+      "Bash(git reset:*)",
+      "Bash(timeout 30 docker logs:*)"
     ],
     "deny": [],
     "ask": []

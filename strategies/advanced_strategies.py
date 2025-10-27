@@ -415,27 +415,58 @@ class AdvancedStrategyEngine:
                 indicators={}
             )
 
-        # Calculate weighted votes
-        call_score = sum(s.confidence for s in signals if s.direction == 'CALL')
-        put_score = sum(s.confidence for s in signals if s.direction == 'PUT')
+        # Count strategies voting in each direction
+        call_signals = [s for s in signals if s.direction == 'CALL']
+        put_signals = [s for s in signals if s.direction == 'PUT']
+
+        call_count = len(call_signals)
+        put_count = len(put_signals)
+
+        # Calculate weighted scores
+        call_score = sum(s.confidence for s in call_signals)
+        put_score = sum(s.confidence for s in put_signals)
 
         # Collect all reasons and indicators
         all_reasons = []
         all_indicators = {}
         for sig in signals:
-            all_reasons.extend([f"[{sig.strategy_name}] {r}" for r in sig.reasons])
+            # Only include reasons from strategies voting in winning direction
             all_indicators.update({f"{sig.strategy_name}_{k}": v for k, v in sig.indicators.items()})
 
-        # Determine final direction
-        if call_score > put_score and call_score > 1.5:  # Require minimum confluence
-            confidence = min(0.95, call_score / len(signals))
-            return StrategySignal('CALL', confidence, 'aggregated', all_reasons, all_indicators)
-        elif put_score > call_score and put_score > 1.5:
-            confidence = min(0.95, put_score / len(signals))
-            return StrategySignal('PUT', confidence, 'aggregated', all_reasons, all_indicators)
+        # IMPROVED: Require at least 2 strategies agreeing AND strong score
+        # For real money trading, we need higher confidence
+        min_strategies_required = 2
+        min_score_required = 1.5  # At least 2 strategies with 0.75+ confidence each
+
+        if call_count >= min_strategies_required and call_score > put_score and call_score >= min_score_required:
+            # Calculate confidence as average of agreeing strategies
+            avg_confidence = call_score / call_count
+            # Boost confidence slightly if more strategies agree
+            confluence_boost = min(0.05 * (call_count - 1), 0.15)
+            final_confidence = min(0.95, avg_confidence + confluence_boost)
+
+            # Only include reasons from CALL strategies
+            all_reasons = [f"[{sig.strategy_name}] {r}" for sig in call_signals for r in sig.reasons]
+
+            return StrategySignal('CALL', final_confidence, 'aggregated', all_reasons, all_indicators)
+
+        elif put_count >= min_strategies_required and put_score > call_score and put_score >= min_score_required:
+            # Calculate confidence as average of agreeing strategies
+            avg_confidence = put_score / put_count
+            # Boost confidence slightly if more strategies agree
+            confluence_boost = min(0.05 * (put_count - 1), 0.15)
+            final_confidence = min(0.95, avg_confidence + confluence_boost)
+
+            # Only include reasons from PUT strategies
+            all_reasons = [f"[{sig.strategy_name}] {r}" for sig in put_signals for r in sig.reasons]
+
+            return StrategySignal('PUT', final_confidence, 'aggregated', all_reasons, all_indicators)
+
         else:
+            # Log why signal was rejected for debugging
+            rejection_reason = f"Insufficient confluence: {call_count} CALL ({call_score:.2f}), {put_count} PUT ({put_score:.2f})"
             return StrategySignal('NEUTRAL', 0.0, 'insufficient_confluence',
-                                ['Strategies did not reach consensus'], all_indicators)
+                                [rejection_reason], all_indicators)
 
     # ========== Fallback Implementations (when TA-Lib not available) ==========
 

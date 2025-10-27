@@ -56,10 +56,10 @@ CONSERVATIVE_CONFIG = StrategyConfig(
 )
 
 MODERATE_CONFIG = StrategyConfig(
-    min_confidence=0.75,
+    min_confidence=0.78,  # Increased from 0.75 for better quality signals
     min_confluence=2,
     max_trade_amount=2.0,
-    max_daily_loss=10.0,
+    max_daily_loss=8.0,  # Reduced from 10.0 to be more protective of $100 account
     max_concurrent_trades=2
 )
 

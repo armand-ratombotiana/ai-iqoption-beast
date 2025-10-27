@@ -76,9 +76,10 @@ class StrategyIntegrator:
                 'indicators': signal.indicators
             }]
 
-            self.logger.info(f"✅ Signal: {signal.direction} @ {signal.confidence:.2f}")
+            # Only log detailed signal info at debug level to reduce noise
+            self.logger.debug(f"✅ Signal: {signal.direction} @ {signal.confidence:.2f}")
             for reason in signal.reasons[:3]:  # Log top 3 reasons
-                self.logger.info(f"   • {reason}")
+                self.logger.debug(f"   • {reason}")
 
             return (signal.direction, signal.confidence, breakdown)
 

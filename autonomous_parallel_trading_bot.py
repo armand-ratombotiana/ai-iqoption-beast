@@ -2600,21 +2600,32 @@ def create_health_api(bot: ParallelTradingBot):
                             <th>Instrument</th>
                             <th>Direction</th>
                             <th>Amount</th>
+                            <th>Payout</th>
                             <th>Result</th>
                             <th>P&L</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${trades.map(trade => `
+                        ${trades.map(trade => {
+                            const time = trade.entry_time || trade.timestamp;
+                            const profit = trade.pnl !== undefined ? trade.pnl : trade.profit;
+                            const result = trade.result.toUpperCase();
+                            const resultClass = result === 'WIN' ? 'positive' : result === 'LOSS' ? 'negative' : '';
+                            const profitClass = profit >= 0 ? 'positive' : 'negative';
+                            const payoutPercent = (trade.payout_ratio * 100).toFixed(0);
+
+                            return `
                             <tr>
-                                <td>${new Date(trade.entry_time).toLocaleTimeString()}</td>
+                                <td>${new Date(time).toLocaleTimeString()}</td>
                                 <td>${trade.instrument}</td>
-                                <td>${trade.direction}</td>
-                                <td>$${trade.amount}</td>
-                                <td class="${trade.result === 'win' ? 'positive' : 'negative'}">${trade.result.toUpperCase()}</td>
-                                <td class="${trade.pnl >= 0 ? 'positive' : 'negative'}">$${trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}</td>
+                                <td class="${trade.direction === 'CALL' ? 'positive' : 'negative'}">${trade.direction}</td>
+                                <td>$${trade.amount.toFixed(2)}</td>
+                                <td>${payoutPercent}%</td>
+                                <td class="${resultClass}">${result}</td>
+                                <td class="${profitClass}">$${profit >= 0 ? '+' : ''}${profit.toFixed(2)}</td>
                             </tr>
-                        `).join('')}
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             `;

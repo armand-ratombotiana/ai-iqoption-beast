@@ -168,7 +168,8 @@ services:
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/kael-dashboard.json:ro
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     ports:
       - "3000:3000"
     networks:
@@ -177,7 +178,7 @@ services:
       - prometheus
 
   # ============================================================================
-  # POSTGRES EXPORTER - Database Metrics (Optional)
+  # POSTGRES EXPORTER - Database Metrics
   # ============================================================================
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:latest
@@ -191,6 +192,28 @@ services:
       - trading-network
     depends_on:
       - timescaledb
+
+  # ============================================================================
+  # ANGULAR DASHBOARD - Modern Trading UI
+  # ============================================================================
+  dashboard-ui:
+    build:
+      context: ./dashboard-ui
+      dockerfile: Dockerfile
+    container_name: kael-dashboard-ui
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    networks:
+      - trading-network
+    depends_on:
+      - parallel-trading-bot
+      - grafana
+      - prometheus
+    environment:
+      - API_URL=http://kael-parallel-trading-bot:5001
+      - GRAFANA_URL=http://grafana:3000
+      - PROMETHEUS_URL=http://prometheus:9090
 
 networks:
   trading-network:

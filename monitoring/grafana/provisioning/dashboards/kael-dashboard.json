@@ -1,0 +1,125 @@
+{
+  "dashboard": {
+    "title": "KAEL Trading Bot Monitoring",
+    "tags": ["trading", "bot", "kael"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Account Balance ($)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "kael_account_balance",
+            "legendFormat": "Balance"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Daily P&L ($)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "kael_daily_pnl",
+            "legendFormat": "Daily P&L"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Win Rate (%)",
+        "type": "gauge",
+        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 6},
+        "targets": [
+          {
+            "expr": "kael_win_rate",
+            "legendFormat": "Win Rate"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Total Trades",
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 8, "w": 6, "h": 6},
+        "targets": [
+          {
+            "expr": "kael_total_trades",
+            "legendFormat": "Total"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Active Trades",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 8, "w": 6, "h": 6},
+        "targets": [
+          {
+            "expr": "kael_active_trades",
+            "legendFormat": "Active"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Wins vs Losses",
+        "type": "stat",
+        "gridPos": {"x": 18, "y": 8, "w": 6, "h": 6},
+        "targets": [
+          {
+            "expr": "kael_wins",
+            "legendFormat": "Wins"
+          },
+          {
+            "expr": "kael_losses",
+            "legendFormat": "Losses"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Strategy Performance",
+        "type": "table",
+        "gridPos": {"x": 0, "y": 14, "w": 24, "h": 10},
+        "targets": [
+          {
+            "expr": "kael_strategy_win_rate",
+            "format": "table",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Trade Execution Time (ms)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "kael_trade_execution_time_ms",
+            "legendFormat": "Execution Time"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "API Response Time (ms)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "kael_api_response_time_ms",
+            "legendFormat": "Response Time"
+          }
+        ]
+      }
+    ]
+  }
+}

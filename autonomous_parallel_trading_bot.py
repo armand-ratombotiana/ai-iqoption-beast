@@ -63,7 +63,41 @@ except ImportError:
 sys.path.insert(0, '/app/app/KAEL/KAEL/src')
 
 from flask import Flask, jsonify, request
+from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from iqoptionapi.stable_api import IQ_Option
+
+
+# =============================================================================
+# PROMETHEUS METRICS
+# =============================================================================
+
+# Account metrics
+prometheus_balance = Gauge('kael_account_balance', 'Current account balance in USD')
+prometheus_daily_pnl = Gauge('kael_daily_pnl', 'Daily profit and loss in USD')
+prometheus_roi = Gauge('kael_roi_percent', 'Return on investment percentage')
+
+# Trading metrics
+prometheus_total_trades = Counter('kael_total_trades', 'Total number of trades executed')
+prometheus_wins = Counter('kael_wins', 'Total number of winning trades')
+prometheus_losses = Counter('kael_losses', 'Total number of losing trades')
+prometheus_win_rate = Gauge('kael_win_rate', 'Current win rate percentage')
+prometheus_active_trades = Gauge('kael_active_trades', 'Number of currently active trades')
+
+# Strategy metrics
+prometheus_strategy_win_rate = Gauge('kael_strategy_win_rate', 'Win rate per strategy', ['strategy'])
+prometheus_strategy_trades = Counter('kael_strategy_trades', 'Total trades per strategy', ['strategy'])
+prometheus_strategy_profit = Gauge('kael_strategy_profit', 'Total profit per strategy', ['strategy'])
+
+# Performance metrics
+prometheus_execution_time = Histogram('kael_trade_execution_time_ms', 'Trade execution time in milliseconds',
+                                      buckets=[10, 50, 100, 250, 500, 1000, 2500, 5000])
+prometheus_api_response_time = Histogram('kael_api_response_time_ms', 'API response time in milliseconds',
+                                          buckets=[10, 50, 100, 250, 500, 1000, 2500, 5000])
+
+# Risk metrics
+prometheus_max_drawdown = Gauge('kael_max_drawdown', 'Maximum drawdown percentage')
+prometheus_current_streak = Gauge('kael_current_streak', 'Current win/loss streak (positive=wins, negative=losses)')
+prometheus_risk_budget_remaining = Gauge('kael_risk_budget_remaining', 'Remaining daily risk budget in USD')
 
 
 # =============================================================================
@@ -1201,6 +1235,152 @@ class ParallelTradingBot:
                 return ('PUT' if move > 0 else 'CALL', 0.55)
             return ('NEUTRAL', 0.0)
 
+        # Advanced indicator strategies (prefer TA-Lib when available)
+        def _to_arrays(c):
+            # Convert candle dicts to numpy arrays for TA-Lib
+            try:
+                import numpy as _np
+            except Exception:
+                _np = None
+
+            highs = []
+            lows = []
+            closes = []
+            opens = []
+            vols = []
+            for x in c:
+                opens.append(float(x.get('open', x.get('o', 0))))
+                highs.append(float(x.get('high', x.get('h', x.get('max', 0)))))
+                lows.append(float(x.get('low', x.get('l', x.get('min', 0)))))
+                closes.append(float(x.get('close', x.get('c', 0))))
+                vols.append(float(x.get('volume', x.get('v', 0))))
+
+            if _np is not None:
+                return _np.array(highs), _np.array(lows), _np.array(closes), _np.array(opens), _np.array(vols)
+            return highs, lows, closes, opens, vols
+
+        def strat_rsi(c):
+            try:
+                highs, lows, closes, opens, vols = _to_arrays(c)
+                try:
+                    import talib
+                    rsi = talib.RSI(closes, timeperiod=14)
+                    last = float(rsi[-1]) if len(rsi) and rsi[-1] is not None else None
+                except Exception:
+                    # fallback simple RSI
+                    gains = []
+                    losses = []
+                    for i in range(1, min(len(closes), 15)):
+                        diff = closes[-i] - closes[-i-1]
+                        if diff > 0:
+                            gains.append(diff)
+                        else:
+                            losses.append(abs(diff))
+                    avg_gain = (sum(gains) / len(gains)) if gains else 0.0
+                    avg_loss = (sum(losses) / len(losses)) if losses else 0.0
+                    last = 100.0 if avg_loss == 0 and avg_gain > 0 else 0.0 if avg_gain == 0 and avg_loss > 0 else (100.0 * (avg_gain / (avg_gain + avg_loss))) if (avg_gain + avg_loss) > 0 else None
+
+                if last is None:
+                    return ('NEUTRAL', 0.0)
+                if last > 70:
+                    score = min(0.95, 0.6 + (last - 70) / 30)
+                    return ('PUT', round(score, 2))
+                if last < 30:
+                    score = min(0.95, 0.6 + (30 - last) / 30)
+                    return ('CALL', round(score, 2))
+                return ('NEUTRAL', 0.0)
+            except Exception:
+                return ('NEUTRAL', 0.0)
+
+        def strat_macd(c):
+            try:
+                highs, lows, closes, opens, vols = _to_arrays(c)
+                import numpy as _np
+                try:
+                    import talib
+                    macd, signal, hist = talib.MACD(closes, fastperiod=12, slowperiod=26, signalperiod=9)
+                    last_hist = float(hist[-1]) if len(hist) and hist[-1] is not None else 0.0
+                except Exception:
+                    # approximate MACD by EMA differences if talib unavailable
+                    def ema(arr, period):
+                        alpha = 2 / (period + 1)
+                        s = arr[0]
+                        for v in arr[1:]:
+                            s = alpha * v + (1 - alpha) * s
+                        return s
+                    if len(closes) < 26:
+                        return ('NEUTRAL', 0.0)
+                    fast = ema(list(closes[-12:]), 12)
+                    slow = ema(list(closes[-26:]), 26)
+                    last_hist = fast - slow
+
+                if last_hist > 0:
+                    score = min(0.95, 0.6 + abs(last_hist) / max(1.0, abs(closes[-1])))
+                    return ('CALL', round(score, 2))
+                if last_hist < 0:
+                    score = min(0.95, 0.6 + abs(last_hist) / max(1.0, abs(closes[-1])))
+                    return ('PUT', round(score, 2))
+                return ('NEUTRAL', 0.0)
+            except Exception:
+                return ('NEUTRAL', 0.0)
+
+        def strat_bbands(c):
+            try:
+                highs, lows, closes, opens, vols = _to_arrays(c)
+                try:
+                    import talib
+                    upper, middle, lower = talib.BBANDS(closes, timeperiod=20, nbdevup=2, nbdevdn=2)
+                    last_close = float(closes[-1])
+                    if last_close > upper[-1]:
+                        score = min(0.95, 0.6 + (last_close - upper[-1]) / max(1.0, upper[-1]))
+                        return ('CALL', round(score, 2))
+                    if last_close < lower[-1]:
+                        score = min(0.95, 0.6 + (lower[-1] - last_close) / max(1.0, lower[-1]))
+                        return ('PUT', round(score, 2))
+                except Exception:
+                    # fallback: use z-score of last close vs recent mean/std
+                    import statistics as _stats
+                    window = list(closes[-20:]) if len(closes) >= 20 else list(closes)
+                    if len(window) < 5:
+                        return ('NEUTRAL', 0.0)
+                    m = _stats.mean(window)
+                    sd = _stats.pstdev(window) or 1.0
+                    z = (closes[-1] - m) / sd
+                    if z > 1.5:
+                        return ('CALL', 0.65)
+                    if z < -1.5:
+                        return ('PUT', 0.65)
+                return ('NEUTRAL', 0.0)
+            except Exception:
+                return ('NEUTRAL', 0.0)
+
+        def strat_stochastic(c):
+            try:
+                highs, lows, closes, opens, vols = _to_arrays(c)
+                try:
+                    import talib
+                    slowk, slowd = talib.STOCH(highs, lows, closes, fastk_period=14, slowk_period=3, slowk_matype=0, slowd_period=3)
+                    k = float(slowk[-1]) if len(slowk) and slowk[-1] is not None else None
+                    d = float(slowd[-1]) if len(slowd) and slowd[-1] is not None else None
+                except Exception:
+                    # simple fallback: compare last close to recent highs/lows
+                    window_h = max(highs[-14:]) if len(highs) >= 14 else max(highs) if highs else None
+                    window_l = min(lows[-14:]) if len(lows) >= 14 else min(lows) if lows else None
+                    if window_h is None or window_l is None or window_h == window_l:
+                        return ('NEUTRAL', 0.0)
+                    k = 100.0 * (closes[-1] - window_l) / (window_h - window_l)
+                    d = k
+
+                if k is None or d is None:
+                    return ('NEUTRAL', 0.0)
+                if k > 80 and d > 80:
+                    return ('PUT', 0.65)
+                if k < 20 and d < 20:
+                    return ('CALL', 0.65)
+                return ('NEUTRAL', 0.0)
+            except Exception:
+                return ('NEUTRAL', 0.0)
+
         # Use advanced strategies if available, otherwise fall back to simple strategies
         if self.strategy_integrator is not None:
             try:
@@ -1229,9 +1409,22 @@ class ParallelTradingBot:
                 self.logger.error(f"Advanced strategy error: {e}", exc_info=True)
                 # Fall through to simple strategies
 
-        # Simple strategy fallback (original implementation)
+        # Simple + advanced strategy fallback (prefer TA-Lib when available)
         strategies = [
             strat_simple_candle_count,
+            strat_rsi,
+            strat_macd,
+            strat_bbands,
+            strat_stochastic,
+            strat_momentum,
+            strat_moving_average_cross,
+            strat_two_bar_reversal,
+            strat_trend_strength,
+            strat_volume_spike,
+            strat_recent_volatility,
+            strat_count_green_red,
+            strat_price_action,
+            strat_open_close_gap
         ]
 
         votes = {'CALL': 0.0, 'PUT': 0.0, 'NEUTRAL': 0.0}
@@ -1750,6 +1943,14 @@ def create_health_api(bot: ParallelTradingBot):
     """Create health monitoring API"""
     app = Flask(__name__)
 
+    # Enable CORS for Angular frontend
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
+
     @app.route('/health', methods=['GET'])
     def health():
         return jsonify({'status': 'ok', 'timestamp': datetime.now().isoformat()})
@@ -1800,6 +2001,47 @@ def create_health_api(bot: ParallelTradingBot):
     def stop():
         bot.stop()
         return jsonify({'message': 'Shutdown initiated'})
+
+    @app.route('/metrics', methods=['GET'])
+    def metrics():
+        """Prometheus metrics endpoint"""
+        # Update Prometheus metrics with current bot state
+        try:
+            stats = bot.get_statistics()
+
+            # Update account metrics
+            prometheus_balance.set(stats.get('balance', 0))
+            prometheus_daily_pnl.set(stats.get('daily_pnl', 0))
+
+            total_trades = stats.get('total_trades', 0)
+            wins = stats.get('wins', 0)
+            win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+            prometheus_win_rate.set(win_rate)
+
+            # Update trading metrics
+            prometheus_active_trades.set(len(bot.portfolio_manager.state.get('active_instruments', [])))
+
+            # Update risk metrics
+            current_streak = bot.portfolio_manager.state.get('win_streak', 0) - bot.portfolio_manager.state.get('loss_streak', 0)
+            prometheus_current_streak.set(current_streak)
+
+            daily_pnl = stats.get('daily_pnl', 0)
+            remaining_budget = ParallelTradingConfig.MAX_DAILY_LOSS + daily_pnl
+            prometheus_risk_budget_remaining.set(remaining_budget)
+
+            # Update strategy metrics if available
+            if bot.trade_logger and hasattr(bot.trade_logger, 'db'):
+                strategy_stats = bot.trade_logger.db.get_strategy_stats(100)
+                for stat in strategy_stats:
+                    strategy_name = stat['strategy_name']
+                    prometheus_strategy_win_rate.labels(strategy=strategy_name).set(stat['win_rate'])
+                    prometheus_strategy_profit.labels(strategy=strategy_name).set(stat['total_profit'])
+
+        except Exception as e:
+            app.logger.error(f"Error updating Prometheus metrics: {e}")
+
+        # Generate and return Prometheus metrics
+        return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
     @app.route('/performance', methods=['GET'])
     def performance():

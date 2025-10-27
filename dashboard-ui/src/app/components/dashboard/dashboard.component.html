@@ -1,0 +1,227 @@
+<div class="dashboard-container">
+  <header>
+    <h1>🤖 KAEL Trading Bot Dashboard</h1>
+  </header>
+
+  <!-- Loading State -->
+  <div *ngIf="isLoading" class="loading">
+    <div class="spinner"></div>
+    <p>Loading dashboard...</p>
+  </div>
+
+  <!-- Error State -->
+  <div *ngIf="error" class="error-message">
+    <p>{{ error }}</p>
+  </div>
+
+  <!-- Main Dashboard Content -->
+  <div *ngIf="!isLoading && !error" class="dashboard-grid">
+
+    <!-- Status Card -->
+    <div class="card">
+      <h2>📊 Status</h2>
+      <div class="metric">
+        <span class="metric-label">Bot Status:</span>
+        <span [class]="'status-badge status-' + (botStatus === 'Active' ? 'active' : 'paused')">
+          {{ botStatus }}
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Trading Mode:</span>
+        <span class="metric-value">{{ config?.trading?.mode || '-' }}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Last Updated:</span>
+        <span class="metric-value neutral">{{ lastUpdated ? (lastUpdated | date:'medium') : '-' }}</span>
+      </div>
+    </div>
+
+    <!-- Performance Card -->
+    <div class="card">
+      <h2>💰 Performance</h2>
+      <div class="metric">
+        <span class="metric-label">Balance:</span>
+        <span class="metric-value">{{ formatCurrency(performance?.summary?.balance) }}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Daily P&L:</span>
+        <span [class]="'metric-value ' + getColorClass(performance?.summary?.daily_pnl)">
+          {{ formatCurrency(performance?.summary?.daily_pnl) }}
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">ROI:</span>
+        <span [class]="'metric-value ' + getColorClass(performance?.summary?.roi_percent)">
+          {{ formatPercent(performance?.summary?.roi_percent) }}
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Win Rate:</span>
+        <span class="metric-value">{{ performance?.summary?.win_rate || 0 }}%</span>
+      </div>
+    </div>
+
+    <!-- Trades Card -->
+    <div class="card">
+      <h2>📈 Trades</h2>
+      <div class="metric">
+        <span class="metric-label">Total Trades:</span>
+        <span class="metric-value">{{ performance?.summary?.total_trades || 0 }}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Wins:</span>
+        <span class="metric-value positive">{{ performance?.summary?.wins || 0 }}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Losses:</span>
+        <span class="metric-value negative">{{ performance?.summary?.losses || 0 }}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Win Streak:</span>
+        <span class="metric-value">{{ performance?.streaks?.current_win_streak || 0 }}</span>
+      </div>
+    </div>
+
+    <!-- Strategy Info Card -->
+    <div class="card">
+      <h2>🎯 Strategy</h2>
+      <div class="metric">
+        <span class="metric-label">Advanced Strategies:</span>
+        <span class="metric-value">
+          {{ config?.strategy?.advanced_strategies_enabled ? '✅ Enabled' : '❌ Disabled' }}
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Min Confidence:</span>
+        <span class="metric-value">
+          {{ config?.strategy?.min_confidence !== 'N/A' && config?.strategy?.min_confidence ? (config.strategy.min_confidence * 100 | number:'1.0-0') + '%' : 'N/A' }}
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Min Confluence:</span>
+        <span class="metric-value">
+          {{ config?.strategy?.min_confluence !== 'N/A' && config?.strategy?.min_confluence ? config.strategy.min_confluence + ' strategies' : 'N/A' }}
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Max Trade Amount:</span>
+        <span class="metric-value">
+          {{ config?.strategy?.max_trade_amount !== 'N/A' && config?.strategy?.max_trade_amount ? formatCurrency(+config.strategy.max_trade_amount) : 'N/A' }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Recent Trades Table -->
+    <div class="card full-width">
+      <h2>📋 Recent Trades (Last 10)</h2>
+      <div class="table-container">
+        <table class="trades-table" *ngIf="recentTrades.length > 0">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Instrument</th>
+              <th>Direction</th>
+              <th>Amount</th>
+              <th>Result</th>
+              <th>Profit</th>
+              <th>Strategy</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let trade of recentTrades">
+              <td>{{ formatTime(trade.entry_time) }}</td>
+              <td>{{ trade.instrument }}</td>
+              <td>
+                <span [class]="'direction-badge ' + (trade.direction === 'CALL' ? 'call' : 'put')">
+                  {{ trade.direction }}
+                </span>
+              </td>
+              <td>{{ formatCurrency(trade.amount) }}</td>
+              <td>
+                <span [class]="'result-badge ' + (trade.result === 'WIN' ? 'win' : trade.result === 'LOSS' ? 'loss' : 'pending')">
+                  {{ trade.result || 'PENDING' }}
+                </span>
+              </td>
+              <td [class]="getColorClass(trade.profit)">
+                {{ trade.profit !== undefined ? formatCurrency(trade.profit) : '-' }}
+              </td>
+              <td class="strategy-name">{{ trade.selected_strategy || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p *ngIf="recentTrades.length === 0" class="no-data">No trades yet</p>
+      </div>
+    </div>
+
+    <!-- Strategy Performance Comparison -->
+    <div class="card full-width">
+      <h2>📊 Strategy Performance Comparison</h2>
+
+      <!-- Time Filters -->
+      <div class="time-filters">
+        <button *ngFor="let filter of timeFilters"
+                [class.active]="selectedTimeFilter === filter.value"
+                (click)="filterStrategies(filter.value)"
+                class="filter-btn">
+          {{ filter.label }}
+        </button>
+      </div>
+
+      <!-- Strategy Stats Table -->
+      <div class="table-container">
+        <p *ngIf="strategyStats" class="time-period-label">
+          Time Period: <strong>{{ strategyStats.time_period }}</strong>
+        </p>
+
+        <table class="strategy-table" *ngIf="strategyStats && strategyStats.strategy_stats.length > 0">
+          <thead>
+            <tr>
+              <th>Strategy</th>
+              <th>Trades</th>
+              <th>Wins</th>
+              <th>Losses</th>
+              <th>Win Rate</th>
+              <th>Total P&L</th>
+              <th>Avg P&L</th>
+              <th>Best Trade</th>
+              <th>Worst Trade</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let stat of strategyStats.strategy_stats">
+              <td class="strategy-name">{{ stat.strategy_name }}</td>
+              <td>{{ stat.total_trades }}</td>
+              <td class="positive">{{ stat.wins }}</td>
+              <td class="negative">{{ stat.losses }}</td>
+              <td><strong>{{ stat.win_rate }}%</strong></td>
+              <td [class]="getColorClass(stat.total_profit)">
+                <strong>{{ formatCurrency(stat.total_profit) }}</strong>
+              </td>
+              <td [class]="getColorClass(stat.avg_profit_per_trade)">
+                {{ formatCurrency(stat.avg_profit_per_trade) }}
+              </td>
+              <td class="positive">{{ formatCurrency(stat.best_trade) }}</td>
+              <td class="negative">{{ formatCurrency(stat.worst_trade) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p *ngIf="strategyStats && strategyStats.strategy_stats.length === 0" class="no-data">
+          No strategy data available yet
+        </p>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card full-width controls">
+      <h2>🎮 Controls</h2>
+      <div class="button-group">
+        <button (click)="resumeTrading()" class="btn btn-success">▶️ Resume Trading</button>
+        <button (click)="pauseTrading()" class="btn btn-warning">⏸️ Pause Trading</button>
+        <button (click)="refreshData()" class="btn btn-primary">🔄 Refresh Data</button>
+        <button (click)="stopBot()" class="btn btn-danger">⏹️ Stop Bot</button>
+      </div>
+    </div>
+
+  </div>
+</div>

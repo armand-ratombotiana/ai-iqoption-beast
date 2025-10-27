@@ -35,7 +35,10 @@
       "Bash(powershell.exe -Command \"Start-Process ''C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe''\")",
       "Bash(start http://localhost:5001/dashboard)",
       "Bash(git reset:*)",
-      "Bash(timeout 30 docker logs:*)"
+      "Bash(timeout 30 docker logs:*)",
+      "Bash(node:*)",
+      "Bash(npx -y @angular/cli@latest new dashboard-ui --routing --style=scss --skip-git --package-manager=npm)",
+      "Bash(npm start)"
     ],
     "deny": [],
     "ask": []

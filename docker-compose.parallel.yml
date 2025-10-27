@@ -129,9 +129,76 @@ services:
     networks:
       - trading-network
 
+  # ============================================================================
+  # PROMETHEUS - Metrics Collection
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kael-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    networks:
+      - trading-network
+    depends_on:
+      - parallel-trading-bot
+
+  # ============================================================================
+  # GRAFANA - Metrics Visualization
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kael-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/kael-dashboard.json:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - trading-network
+    depends_on:
+      - prometheus
+
+  # ============================================================================
+  # POSTGRES EXPORTER - Database Metrics (Optional)
+  # ============================================================================
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    container_name: kael-postgres-exporter
+    restart: unless-stopped
+    environment:
+      - DATA_SOURCE_NAME=postgresql://postgres:postgres@timescaledb:5432/kael?sslmode=disable
+    ports:
+      - "9187:9187"
+    networks:
+      - trading-network
+    depends_on:
+      - timescaledb
+
 networks:
   trading-network:
     driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
 
   # Optional TimescaleDB/Postgres service used by the bot when DATABASE_URL is set
   # NOTE: defined as a sibling service to parallel-trading-bot above

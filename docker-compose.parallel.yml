@@ -194,26 +194,27 @@ services:
       - timescaledb
 
   # ============================================================================
-  # ANGULAR DASHBOARD - Modern Trading UI
+  # ANGULAR DASHBOARD - Modern Trading UI (DISABLED - TypeScript build errors)
+  # Use Flask dashboard at http://localhost:5001/dashboard instead
   # ============================================================================
-  dashboard-ui:
-    build:
-      context: ./dashboard-ui
-      dockerfile: Dockerfile
-    container_name: kael-dashboard-ui
-    restart: unless-stopped
-    ports:
-      - "4200:80"
-    networks:
-      - trading-network
-    depends_on:
-      - parallel-trading-bot
-      - grafana
-      - prometheus
-    environment:
-      - API_URL=http://kael-parallel-trading-bot:5001
-      - GRAFANA_URL=http://grafana:3000
-      - PROMETHEUS_URL=http://prometheus:9090
+  # dashboard-ui:
+  #   build:
+  #     context: ./dashboard-ui
+  #     dockerfile: Dockerfile
+  #   container_name: kael-dashboard-ui
+  #   restart: unless-stopped
+  #   ports:
+  #     - "4200:80"
+  #   networks:
+  #     - trading-network
+  #   depends_on:
+  #     - parallel-trading-bot
+  #     - grafana
+  #     - prometheus
+  #   environment:
+  #     - API_URL=http://kael-parallel-trading-bot:5001
+  #     - GRAFANA_URL=http://grafana:3000
+  #     - PROMETHEUS_URL=http://prometheus:9090
 
 networks:
   trading-network:

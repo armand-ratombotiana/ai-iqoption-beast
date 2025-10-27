@@ -1125,6 +1125,9 @@ class ParallelTradingBot:
         def strat_simple_candle_count(c):
             """Count green vs red candles in a short window and vote accordingly.
 
+            Args:
+                c (list): List of candle dictionaries, each with 'open' and 'close' keys.
+
             Rules:
             - Use the last N candles (default 10)
             - If greens >= reds + 3 -> strong CALL
@@ -1605,8 +1608,13 @@ class ParallelTradingBot:
     def parallel_trading_cycle(self):
         """Execute optimized parallel trading cycle"""
         cycle_start = time.time()
-        
+
         try:
+            # Check if trading is paused
+            if self.portfolio_manager.state.get('paused', False):
+                self.logger.debug("⏸️  Trading paused - skipping cycle")
+                return
+
             if not self.check_connection_health():
                 return
 
@@ -1779,6 +1787,573 @@ def create_health_api(bot: ParallelTradingBot):
     def stop():
         bot.stop()
         return jsonify({'message': 'Shutdown initiated'})
+
+    @app.route('/performance', methods=['GET'])
+    def performance():
+        """Return detailed performance metrics"""
+        try:
+            stats = bot.get_statistics()
+
+            # Calculate additional metrics
+            total_trades = stats.get('total_trades', 0)
+            wins = stats.get('wins', 0)
+            losses = stats.get('losses', 0)
+            win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+
+            daily_pnl = stats.get('daily_pnl', 0)
+            balance = stats.get('balance', 0)
+            roi = (daily_pnl / 100 * 100) if balance > 0 else 0  # ROI based on $100 start
+
+            performance_data = {
+                'summary': {
+                    'total_trades': total_trades,
+                    'wins': wins,
+                    'losses': losses,
+                    'win_rate': round(win_rate, 2),
+                    'daily_pnl': round(daily_pnl, 2),
+                    'roi_percent': round(roi, 2),
+                    'balance': round(balance, 2)
+                },
+                'streaks': {
+                    'current_win_streak': bot.portfolio_manager.state.get('win_streak', 0),
+                    'current_loss_streak': bot.portfolio_manager.state.get('loss_streak', 0),
+                    'best_win_streak': bot.portfolio_manager.state.get('best_win_streak', 0),
+                    'worst_loss_streak': bot.portfolio_manager.state.get('worst_loss_streak', 0)
+                },
+                'limits': {
+                    'max_daily_loss': ParallelTradingConfig.MAX_DAILY_LOSS,
+                    'remaining_loss_budget': ParallelTradingConfig.MAX_DAILY_LOSS + daily_pnl,
+                    'max_concurrent_instruments': ParallelTradingConfig.MAX_CONCURRENT_INSTRUMENTS
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+
+            return jsonify(performance_data)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/active_trades', methods=['GET'])
+    def active_trades():
+        """Return currently active trades"""
+        try:
+            active = []
+            for instrument in bot.portfolio_manager.state.get('active_instruments', []):
+                active.append({
+                    'instrument': instrument,
+                    'entry_time': bot.portfolio_manager.state.get(f'{instrument}_entry_time', 'Unknown'),
+                    'direction': bot.portfolio_manager.state.get(f'{instrument}_direction', 'Unknown'),
+                    'amount': bot.portfolio_manager.state.get(f'{instrument}_amount', 0)
+                })
+
+            return jsonify({
+                'active_count': len(active),
+                'active_trades': active,
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/config', methods=['GET'])
+    def get_config():
+        """Return current bot configuration"""
+        config_data = {
+            'trading': {
+                'mode': ParallelTradingConfig.TRADING_MODE,
+                'max_concurrent_instruments': ParallelTradingConfig.MAX_CONCURRENT_INSTRUMENTS,
+                'max_daily_loss': ParallelTradingConfig.MAX_DAILY_LOSS,
+                'instrument_scan_interval': ParallelTradingConfig.INSTRUMENT_SCAN_INTERVAL,
+                'fictitious_balance_enabled': ParallelTradingConfig.ENABLE_FICTITIOUS_BALANCE,
+                'fictitious_start_balance': ParallelTradingConfig.FICTITIOUS_START_BALANCE
+            },
+            'strategy': {
+                'advanced_strategies_enabled': ADVANCED_STRATEGIES_AVAILABLE and bot.strategy_integrator is not None,
+                'min_confidence': bot.strategy_integrator.config.min_confidence if bot.strategy_integrator else 'N/A',
+                'min_confluence': bot.strategy_integrator.config.min_confluence if bot.strategy_integrator else 'N/A',
+                'max_trade_amount': bot.strategy_integrator.config.max_trade_amount if bot.strategy_integrator else 'N/A',
+                'enabled_strategies_count': len(bot.strategy_integrator.config.enabled_strategies) if bot.strategy_integrator else 0
+            },
+            'binary_options': {
+                'min_payout_ratio': ParallelTradingConfig.MIN_PAYOUT_RATIO,
+                'min_time_to_expiry_seconds': ParallelTradingConfig.MIN_TIME_TO_EXPIRY_SECONDS,
+                'max_time_to_expiry_seconds': ParallelTradingConfig.MAX_TIME_TO_EXPIRY_SECONDS,
+                'noise_threshold': ParallelTradingConfig.NOISE_THRESHOLD
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        return jsonify(config_data)
+
+    @app.route('/strategy_info', methods=['GET'])
+    def strategy_info():
+        """Return information about enabled strategies"""
+        if not bot.strategy_integrator:
+            return jsonify({'error': 'Advanced strategies not enabled'}), 404
+
+        try:
+            strategy_data = {
+                'enabled': True,
+                'risk_profile': os.getenv('STRATEGY_RISK_PROFILE', 'moderate'),
+                'strategies': bot.strategy_integrator.config.enabled_strategies,
+                'config': {
+                    'min_confidence': bot.strategy_integrator.config.min_confidence,
+                    'min_confluence': bot.strategy_integrator.config.min_confluence,
+                    'max_trade_amount': bot.strategy_integrator.config.max_trade_amount,
+                    'min_trade_amount': bot.strategy_integrator.config.min_trade_amount,
+                    'max_daily_loss': bot.strategy_integrator.config.max_daily_loss,
+                    'max_concurrent_trades': bot.strategy_integrator.config.max_concurrent_trades
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+            return jsonify(strategy_data)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/pause', methods=['POST'])
+    def pause_trading():
+        """Pause trading (stop taking new trades but let active ones finish)"""
+        try:
+            bot.portfolio_manager.state['paused'] = True
+            return jsonify({
+                'status': 'paused',
+                'message': 'Trading paused. Active trades will complete.',
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/resume', methods=['POST'])
+    def resume_trading():
+        """Resume trading after pause"""
+        try:
+            bot.portfolio_manager.state['paused'] = False
+            return jsonify({
+                'status': 'active',
+                'message': 'Trading resumed.',
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/dashboard', methods=['GET'])
+    def dashboard():
+        """Serve a simple HTML dashboard"""
+        html = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAEL Trading Bot Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(0,0,0,0.15);
+        }
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .metric:last-child { border-bottom: none; }
+        .metric-label {
+            font-weight: 500;
+            color: #666;
+        }
+        .metric-value {
+            font-weight: bold;
+            color: #333;
+        }
+        .positive { color: #10b981; }
+        .negative { color: #ef4444; }
+        .neutral { color: #6b7280; }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .status-paused {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin: 5px;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+        .btn-warning:hover {
+            background: #d97706;
+        }
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #059669;
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+        .controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .trades-table {
+            width: 100%;
+            margin-top: 15px;
+            border-collapse: collapse;
+        }
+        .trades-table th {
+            background: #f3f4f6;
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+        }
+        .trades-table td {
+            padding: 10px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 KAEL Trading Bot Dashboard</h1>
+
+        <div class="grid">
+            <!-- Status Card -->
+            <div class="card">
+                <h2>📊 Status</h2>
+                <div class="metric">
+                    <span class="metric-label">Bot Status:</span>
+                    <span id="bot-status" class="status-badge status-active">Loading...</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Trading Mode:</span>
+                    <span id="trading-mode" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Last Updated:</span>
+                    <span id="last-updated" class="metric-value neutral">-</span>
+                </div>
+            </div>
+
+            <!-- Performance Card -->
+            <div class="card">
+                <h2>💰 Performance</h2>
+                <div class="metric">
+                    <span class="metric-label">Balance:</span>
+                    <span id="balance" class="metric-value">$-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Daily P&L:</span>
+                    <span id="daily-pnl" class="metric-value">$-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">ROI:</span>
+                    <span id="roi" class="metric-value">-%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Win Rate:</span>
+                    <span id="win-rate" class="metric-value">-%</span>
+                </div>
+            </div>
+
+            <!-- Trades Card -->
+            <div class="card">
+                <h2>📈 Trades</h2>
+                <div class="metric">
+                    <span class="metric-label">Total Trades:</span>
+                    <span id="total-trades" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Wins:</span>
+                    <span id="wins" class="metric-value positive">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Losses:</span>
+                    <span id="losses" class="metric-value negative">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Active Trades:</span>
+                    <span id="active-trades" class="metric-value">-</span>
+                </div>
+            </div>
+
+            <!-- Strategy Card -->
+            <div class="card">
+                <h2>🎯 Strategy</h2>
+                <div class="metric">
+                    <span class="metric-label">Advanced Strategies:</span>
+                    <span id="strategies-enabled" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Min Confidence:</span>
+                    <span id="min-confidence" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Min Confluence:</span>
+                    <span id="min-confluence" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Max Trade Amount:</span>
+                    <span id="max-trade-amount" class="metric-value">$-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="card">
+            <h2>📋 Recent Trades (Last 10)</h2>
+            <div id="recent-trades-container">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading trades...
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="card controls">
+            <h2>🎮 Controls</h2>
+            <button class="btn btn-success" onclick="resumeTrading()">▶️ Resume Trading</button>
+            <button class="btn btn-warning" onclick="pauseTrading()">⏸️ Pause Trading</button>
+            <button class="btn btn-primary" onclick="refreshData()">🔄 Refresh Data</button>
+            <button class="btn btn-danger" onclick="stopBot()">⏹️ Stop Bot</button>
+        </div>
+    </div>
+
+    <script>
+        let autoRefreshInterval;
+
+        async function fetchData(endpoint) {
+            try {
+                const response = await fetch(endpoint);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                console.error(`Error fetching ${endpoint}:`, error);
+                return null;
+            }
+        }
+
+        async function updateDashboard() {
+            const [performance, config, activeTrades, recentTrades] = await Promise.all([
+                fetchData('/performance'),
+                fetchData('/config'),
+                fetchData('/active_trades'),
+                fetchData('/recent_trades?limit=10')
+            ]);
+
+            if (performance) {
+                document.getElementById('balance').textContent = `$${performance.summary.balance}`;
+                const pnl = performance.summary.daily_pnl;
+                const pnlElement = document.getElementById('daily-pnl');
+                pnlElement.textContent = `$${pnl >= 0 ? '+' : ''}${pnl}`;
+                pnlElement.className = pnl >= 0 ? 'metric-value positive' : 'metric-value negative';
+
+                const roi = performance.summary.roi_percent;
+                const roiElement = document.getElementById('roi');
+                roiElement.textContent = `${roi >= 0 ? '+' : ''}${roi}%`;
+                roiElement.className = roi >= 0 ? 'metric-value positive' : 'metric-value negative';
+
+                document.getElementById('win-rate').textContent = `${performance.summary.win_rate}%`;
+                document.getElementById('total-trades').textContent = performance.summary.total_trades;
+                document.getElementById('wins').textContent = performance.summary.wins;
+                document.getElementById('losses').textContent = performance.summary.losses;
+            }
+
+            if (config) {
+                document.getElementById('trading-mode').textContent = config.trading.mode.toUpperCase();
+                document.getElementById('strategies-enabled').textContent =
+                    config.strategy.advanced_strategies_enabled ? '✅ Enabled' : '❌ Disabled';
+                document.getElementById('min-confidence').textContent =
+                    config.strategy.min_confidence !== 'N/A' ? `${(config.strategy.min_confidence * 100).toFixed(0)}%` : 'N/A';
+                document.getElementById('min-confluence').textContent =
+                    config.strategy.min_confluence !== 'N/A' ? `${config.strategy.min_confluence} strategies` : 'N/A';
+                document.getElementById('max-trade-amount').textContent =
+                    config.strategy.max_trade_amount !== 'N/A' ? `$${config.strategy.max_trade_amount}` : 'N/A';
+            }
+
+            if (activeTrades) {
+                document.getElementById('active-trades').textContent = activeTrades.active_count;
+            }
+
+            if (recentTrades && recentTrades.trades) {
+                displayRecentTrades(recentTrades.trades);
+            }
+
+            document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+            document.getElementById('bot-status').textContent = 'Active';
+        }
+
+        function displayRecentTrades(trades) {
+            const container = document.getElementById('recent-trades-container');
+            if (!trades || trades.length === 0) {
+                container.innerHTML = '<p class="loading">No trades yet</p>';
+                return;
+            }
+
+            const table = `
+                <table class="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Instrument</th>
+                            <th>Direction</th>
+                            <th>Amount</th>
+                            <th>Result</th>
+                            <th>P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${trades.map(trade => `
+                            <tr>
+                                <td>${new Date(trade.entry_time).toLocaleTimeString()}</td>
+                                <td>${trade.instrument}</td>
+                                <td>${trade.direction}</td>
+                                <td>$${trade.amount}</td>
+                                <td class="${trade.result === 'win' ? 'positive' : 'negative'}">${trade.result.toUpperCase()}</td>
+                                <td class="${trade.pnl >= 0 ? 'positive' : 'negative'}">$${trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            container.innerHTML = table;
+        }
+
+        async function pauseTrading() {
+            const response = await fetch('/pause', { method: 'POST' });
+            const data = await response.json();
+            alert(data.message || 'Trading paused');
+            updateDashboard();
+        }
+
+        async function resumeTrading() {
+            const response = await fetch('/resume', { method: 'POST' });
+            const data = await response.json();
+            alert(data.message || 'Trading resumed');
+            updateDashboard();
+        }
+
+        async function stopBot() {
+            if (!confirm('Are you sure you want to stop the bot? This will shut down the system.')) return;
+            const response = await fetch('/stop', { method: 'POST' });
+            const data = await response.json();
+            alert(data.message || 'Bot stopped');
+        }
+
+        function refreshData() {
+            updateDashboard();
+        }
+
+        function startAutoRefresh() {
+            autoRefreshInterval = setInterval(updateDashboard, 5000); // Refresh every 5 seconds
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+
+        // Initial load
+        updateDashboard();
+        startAutoRefresh();
+
+        // Stop auto-refresh when page is hidden (saves resources)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+    </script>
+</body>
+</html>
+        """
+        return html
 
     return app
 

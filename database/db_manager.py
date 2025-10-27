@@ -315,6 +315,48 @@ class DatabaseManager:
         """Get AI model performance metrics"""
         return self.fetch_all("SELECT * FROM v_ai_model_performance")
 
+    def get_strategy_stats(self, limit: int = 1000, hours: int = None) -> List[Dict]:
+        """
+        Get performance statistics per strategy
+
+        Args:
+            limit: Max number of trades to analyze
+            hours: Filter trades from last N hours (None = all time)
+
+        Returns:
+            List of strategy performance dicts with win rate, P&L, trade count
+        """
+        time_filter = ""
+        params = []
+
+        if hours:
+            time_filter = "AND entry_time >= datetime('now', ?)"
+            params.append(f'-{hours} hours')
+
+        params.append(limit)
+
+        query = f"""
+        SELECT
+            selected_strategy as strategy_name,
+            COUNT(*) as total_trades,
+            SUM(CASE WHEN result = 'WIN' THEN 1 ELSE 0 END) as wins,
+            SUM(CASE WHEN result = 'LOSS' THEN 1 ELSE 0 END) as losses,
+            ROUND(AVG(CASE WHEN result = 'WIN' THEN 1.0 ELSE 0.0 END) * 100, 2) as win_rate,
+            ROUND(SUM(profit), 2) as total_profit,
+            ROUND(AVG(profit), 2) as avg_profit_per_trade,
+            ROUND(MAX(profit), 2) as best_trade,
+            ROUND(MIN(profit), 2) as worst_trade,
+            ROUND(AVG(payout_ratio) * 100, 2) as avg_payout_percent
+        FROM trades
+        WHERE selected_strategy IS NOT NULL
+        {time_filter}
+        GROUP BY selected_strategy
+        ORDER BY total_profit DESC
+        LIMIT ?
+        """
+
+        return self.fetch_all(query, tuple(params))
+
     def close(self):
         """Close database connection"""
         if self.connection:

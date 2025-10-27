@@ -50,7 +50,12 @@ class TradeLogger:
             return trade_id
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to log trade entry: {e}")
+            # Log full exception with traceback for debugging, and include a safe preview of the trade data
+            try:
+                preview = json.dumps(trade_data if isinstance(trade_data, dict) else {}, default=str)[:2000]
+            except Exception:
+                preview = str(type(trade_data))
+            self.logger.exception(f"❌ Failed to log trade entry. trade_id={trade_data.get('trade_id')} preview={preview}")
             return trade_data.get('trade_id', 'unknown')
 
     def log_trade_result(self, trade_id: str, result: str, profit: float,
@@ -70,8 +75,8 @@ class TradeLogger:
             self.db.update_trade_result(trade_id, result, profit, exit_price, balance_after)
             self.logger.info(f"✅ Logged trade result: {trade_id} -> {result} (${profit:+.2f})")
 
-        except Exception as e:
-            self.logger.error(f"❌ Failed to log trade result for {trade_id}: {e}")
+        except Exception:
+            self.logger.exception(f"❌ Failed to log trade result for {trade_id}")
 
     def log_ai_predictions(self, trade_id: str, predictions: List[Dict[str, Any]],
                           consensus: Optional[Dict[str, Any]] = None):

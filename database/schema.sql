@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS trades (
 
     -- Metadata
     notes TEXT,
+    -- Strategy info
+    selected_strategy TEXT,
+    strategy_breakdown TEXT, -- JSON
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -209,7 +212,9 @@ END;
 -- ============================================================================
 
 -- Recent Trades View
-CREATE VIEW IF NOT EXISTS v_recent_trades AS
+-- Replaceable recent trades view (includes selected strategy)
+DROP VIEW IF EXISTS v_recent_trades;
+CREATE VIEW v_recent_trades AS
 SELECT
     t.trade_id,
     t.timestamp,
@@ -220,6 +225,8 @@ SELECT
     t.result,
     t.profit,
     t.execution_time_ms,
+    t.selected_strategy,
+    t.strategy_breakdown,
     (SELECT AVG(confidence) FROM ai_predictions WHERE trade_id = t.trade_id) as avg_ai_confidence,
     (SELECT COUNT(*) FROM ai_predictions WHERE trade_id = t.trade_id) as model_count
 FROM trades t

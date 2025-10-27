@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ============================================================================
   # KAEL Autonomous Parallel Trading Bot - Optimized 24/7 Trading
@@ -26,8 +24,8 @@ services:
       # ========================================================================
       # PARALLEL TRADING SETTINGS (OPTIMIZED for timing)
       # ========================================================================
-      - MAX_CONCURRENT_INSTRUMENTS=${MAX_CONCURRENT_INSTRUMENTS:-3}
-      - MAX_INSTRUMENTS_TO_MONITOR=${MAX_INSTRUMENTS_TO_MONITOR:-20}
+      - MAX_CONCURRENT_INSTRUMENTS=${MAX_CONCURRENT_INSTRUMENTS:-20}
+      - MAX_INSTRUMENTS_TO_MONITOR=${MAX_INSTRUMENTS_TO_MONITOR:-50}
       - PORTFOLIO_RISK_PERCENT=${PORTFOLIO_RISK_PERCENT:-10.0}
       - MAX_RISK_PER_INSTRUMENT=${MAX_RISK_PER_INSTRUMENT:-2.5}
       - INSTRUMENT_SCAN_INTERVAL=${INSTRUMENT_SCAN_INTERVAL:-3}
@@ -68,6 +66,8 @@ services:
       # ========================================================================
       - ENABLE_HEALTH_API=${ENABLE_HEALTH_API:-true}
       - HEALTH_API_PORT=${HEALTH_API_PORT:-5001}
+      # Database URL (optional) - when provided, bot will use Postgres/Timescale
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@timescaledb:5432/kael}
 
       # ========================================================================
       # LOGGING
@@ -114,6 +114,25 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: kael-timescaledb
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-kael}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - trading-network
+
 networks:
   trading-network:
     driver: bridge
+
+  # Optional TimescaleDB/Postgres service used by the bot when DATABASE_URL is set
+  # NOTE: defined as a sibling service to parallel-trading-bot above
+  

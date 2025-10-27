@@ -1779,12 +1779,19 @@ def create_health_api(bot: ParallelTradingBot):
 
     @app.route('/strategy_stats', methods=['GET'])
     def strategy_stats():
-        """Return aggregated stats by strategy"""
-        limit = int(request.args.get('limit', 100))
+        """Return aggregated stats by strategy with optional time filter"""
+        limit = int(request.args.get('limit', 1000))
+        hours = request.args.get('hours', None)
+        hours = int(hours) if hours else None
+
         if bot.trade_logger and hasattr(bot.trade_logger, 'db'):
             try:
-                stats = bot.trade_logger.db.get_strategy_stats(limit)
-                return jsonify({'strategy_stats': stats})
+                stats = bot.trade_logger.db.get_strategy_stats(limit, hours)
+                return jsonify({
+                    'strategy_stats': stats,
+                    'time_period': f'Last {hours} hours' if hours else 'All time',
+                    'total_strategies': len(stats)
+                })
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
         return jsonify({'error': 'database logging not available'}), 503
@@ -2099,6 +2106,53 @@ def create_health_api(bot: ParallelTradingBot):
             animation: spin 1s linear infinite;
             margin: 20px auto;
         }
+        .time-filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover {
+            background: #f3f4f6;
+        }
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        .strategy-table {
+            width: 100%;
+            margin-top: 15px;
+            border-collapse: collapse;
+        }
+        .strategy-table th {
+            background: #f3f4f6;
+            padding: 12px 10px;
+            text-align: left;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+        }
+        .strategy-table th:hover {
+            background: #e5e7eb;
+        }
+        .strategy-table td {
+            padding: 10px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .strategy-name {
+            font-weight: 600;
+            color: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -2194,6 +2248,23 @@ def create_health_api(bot: ParallelTradingBot):
                 <div class="loading">
                     <div class="spinner"></div>
                     Loading trades...
+                </div>
+            </div>
+        </div>
+
+        <!-- Strategy Performance Comparison -->
+        <div class="card">
+            <h2>📊 Strategy Performance Comparison</h2>
+            <div class="time-filters">
+                <button class="filter-btn active" onclick="filterStrategies(null)">All Time</button>
+                <button class="filter-btn" onclick="filterStrategies(1)">Last Hour</button>
+                <button class="filter-btn" onclick="filterStrategies(24)">Last 24h</button>
+                <button class="filter-btn" onclick="filterStrategies(168)">Last 7 Days</button>
+            </div>
+            <div id="strategy-stats-container">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading strategy data...
                 </div>
             </div>
         </div>
@@ -2331,10 +2402,82 @@ def create_health_api(bot: ParallelTradingBot):
 
         function refreshData() {
             updateDashboard();
+            filterStrategies(window.currentStrategyFilter || null);
+        }
+
+        let currentStrategyFilter = null;
+
+        async function filterStrategies(hours) {
+            // Update active button
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event?.target?.classList.add('active');
+
+            currentStrategyFilter = hours;
+
+            const endpoint = hours ? `/strategy_stats?hours=${hours}` : '/strategy_stats';
+            const data = await fetchData(endpoint);
+
+            if (data && data.strategy_stats) {
+                displayStrategyStats(data.strategy_stats, data.time_period);
+            }
+        }
+
+        function displayStrategyStats(stats, timePeriod) {
+            const container = document.getElementById('strategy-stats-container');
+
+            if (!stats || stats.length === 0) {
+                container.innerHTML = '<p class="loading">No strategy data available yet</p>';
+                return;
+            }
+
+            const table = `
+                <p style="color: #666; margin-bottom: 10px;">Time Period: <strong>${timePeriod}</strong></p>
+                <table class="strategy-table">
+                    <thead>
+                        <tr>
+                            <th>Strategy</th>
+                            <th>Trades</th>
+                            <th>Wins</th>
+                            <th>Losses</th>
+                            <th>Win Rate</th>
+                            <th>Total P&L</th>
+                            <th>Avg P&L</th>
+                            <th>Best Trade</th>
+                            <th>Worst Trade</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${stats.map(s => `
+                            <tr>
+                                <td class="strategy-name">${s.strategy_name || 'Unknown'}</td>
+                                <td>${s.total_trades || 0}</td>
+                                <td class="positive">${s.wins || 0}</td>
+                                <td class="negative">${s.losses || 0}</td>
+                                <td><strong>${s.win_rate || 0}%</strong></td>
+                                <td class="${s.total_profit >= 0 ? 'positive' : 'negative'}">
+                                    <strong>$${s.total_profit || 0}</strong>
+                                </td>
+                                <td class="${s.avg_profit_per_trade >= 0 ? 'positive' : 'negative'}">
+                                    $${s.avg_profit_per_trade || 0}
+                                </td>
+                                <td class="positive">$${s.best_trade || 0}</td>
+                                <td class="negative">$${s.worst_trade || 0}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = table;
         }
 
         function startAutoRefresh() {
-            autoRefreshInterval = setInterval(updateDashboard, 5000); // Refresh every 5 seconds
+            autoRefreshInterval = setInterval(() => {
+                updateDashboard();
+                if (currentStrategyFilter !== undefined) {
+                    filterStrategies(currentStrategyFilter);
+                }
+            }, 5000); // Refresh every 5 seconds
         }
 
         function stopAutoRefresh() {
@@ -2345,6 +2488,7 @@ def create_health_api(bot: ParallelTradingBot):
 
         // Initial load
         updateDashboard();
+        filterStrategies(null); // Load all-time strategy stats
         startAutoRefresh();
 
         // Stop auto-refresh when page is hidden (saves resources)

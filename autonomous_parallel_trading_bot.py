@@ -2474,10 +2474,11 @@ def create_health_api(bot: ParallelTradingBot):
         function startAutoRefresh() {
             autoRefreshInterval = setInterval(() => {
                 updateDashboard();
+                // Strategy stats refresh less frequently to reduce load
                 if (currentStrategyFilter !== undefined) {
-                    filterStrategies(currentStrategyFilter);
+                    setTimeout(() => filterStrategies(currentStrategyFilter), 1000);
                 }
-            }, 5000); // Refresh every 5 seconds
+            }, 10000); // Refresh every 10 seconds (reduced from 5s)
         }
 
         function stopAutoRefresh() {
@@ -2517,7 +2518,15 @@ def start_health_server(app: Flask, logger: logging.Logger):
         # Prefer waitress (lightweight and production-ready for WSGI)
         import waitress  # type: ignore
         logger.info("ℹ️  Starting health API with waitress")
-        waitress.serve(app, host='0.0.0.0', port=ParallelTradingConfig.HEALTH_API_PORT)
+        # Optimized waitress config to handle dashboard auto-refresh
+        waitress.serve(
+            app,
+            host='0.0.0.0',
+            port=ParallelTradingConfig.HEALTH_API_PORT,
+            threads=8,  # Increased from default 4 to handle concurrent requests
+            channel_timeout=60,
+            log_socket_errors=False  # Reduce log noise
+        )
         return
     except Exception:
         logger.debug("waitress not available, falling back to Flask development server")

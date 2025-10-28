@@ -249,6 +249,40 @@ WHERE result IN ('WIN', 'LOSS')
 GROUP BY instrument
 ORDER BY net_profit DESC;
 
+-- Strategy Votes Table (per-strategy voting and outcome tracking)
+CREATE TABLE IF NOT EXISTS strategy_votes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_id TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    strategy_name TEXT NOT NULL,
+    voted_direction TEXT CHECK(voted_direction IN ('CALL','PUT','NEUTRAL')),
+    voted_for_executed BOOLEAN DEFAULT FALSE,
+    trade_result TEXT CHECK(trade_result IN ('WIN','LOSS','DRAW','PENDING','FAILED')),
+    profit REAL DEFAULT 0.0,
+    FOREIGN KEY (trade_id) REFERENCES trades(trade_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_strategy_votes_strategy ON strategy_votes(strategy_name);
+CREATE INDEX IF NOT EXISTS idx_strategy_votes_trade_id ON strategy_votes(trade_id);
+
+-- Strategy Performance View
+DROP VIEW IF EXISTS v_strategy_performance;
+CREATE VIEW v_strategy_performance AS
+SELECT
+    strategy_name,
+    COUNT(*) as total_trades,
+    SUM(CASE WHEN trade_result = 'WIN' THEN 1 ELSE 0 END) as wins,
+    SUM(CASE WHEN trade_result = 'LOSS' THEN 1 ELSE 0 END) as losses,
+    ROUND(AVG(CASE WHEN trade_result = 'WIN' THEN 1.0 ELSE 0.0 END) * 100, 2) as win_rate,
+    ROUND(SUM(profit), 2) as total_profit,
+    ROUND(AVG(profit), 2) as avg_profit_per_trade,
+    ROUND(MAX(profit), 2) as best_trade,
+    ROUND(MIN(profit), 2) as worst_trade
+FROM strategy_votes
+WHERE voted_for_executed = 1
+GROUP BY strategy_name
+ORDER BY total_profit DESC;
+
 -- AI Model Performance View
 CREATE VIEW IF NOT EXISTS v_ai_model_performance AS
 SELECT

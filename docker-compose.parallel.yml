@@ -1,6 +1,6 @@
 services:
   # ============================================================================
-  # KAEL Autonomous Parallel Trading Bot - Optimized 24/7 Trading
+  # KAEL Multi-Account Parallel Trading Bot - 5 Accounts with Different Strategies
   # ============================================================================
   parallel-trading-bot:
     build:
@@ -11,7 +11,12 @@ services:
 
     environment:
       # ========================================================================
-      # IQ OPTION CREDENTIALS (REQUIRED)
+      # MULTI-ACCOUNT MODE (NEW)
+      # ========================================================================
+      - ENABLE_MULTI_ACCOUNT=${ENABLE_MULTI_ACCOUNT:-true}
+      
+      # ========================================================================
+      # IQ OPTION CREDENTIALS (REQUIRED - Primary account for single-account mode)
       # ========================================================================
       - IQOPTION_EMAIL=${IQOPTION_EMAIL}
       - IQOPTION_PASSWORD=${IQOPTION_PASSWORD}
@@ -55,6 +60,12 @@ services:
       - MIN_AI_CONFIDENCE=${MIN_AI_CONFIDENCE:-60}
 
       # ========================================================================
+      # ADVANCED STRATEGIES (NEW)
+      # ========================================================================
+      - USE_ADVANCED_STRATEGIES=${USE_ADVANCED_STRATEGIES:-true}
+      - STRATEGY_RISK_PROFILE=${STRATEGY_RISK_PROFILE:-moderate}
+
+      # ========================================================================
       # AI API KEYS (Optional)
       # ========================================================================
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -66,7 +77,10 @@ services:
       # ========================================================================
       - ENABLE_HEALTH_API=${ENABLE_HEALTH_API:-true}
       - HEALTH_API_PORT=${HEALTH_API_PORT:-5001}
-      # Database URL (optional) - when provided, bot will use Postgres/Timescale
+      
+      # ========================================================================
+      # DATABASE (REQUIRED for multi-account)
+      # ========================================================================
       - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@timescaledb:5432/kael}
 
       # ========================================================================
@@ -81,13 +95,21 @@ services:
     volumes:
       # Persist logs outside container
       - ./logs:/app/app/KAEL/KAEL/logs
-      # Persist database outside container (NEW: comprehensive trade logging)
+      # Persist database files
       - ./database_files:/app/app/KAEL/KAEL/database_files
+      # Persist config (for accounts.json)
+      - ./config:/app/app/KAEL/KAEL/config
+      # Persist reports
+      - ./reports:/app/app/KAEL/KAEL/reports
       # Mount .env file (read-only)
       - ./.env:/app/app/KAEL/KAEL/.env:ro
 
     networks:
       - trading-network
+
+    depends_on:
+      timescaledb:
+        condition: service_healthy
 
     # Health monitoring
     healthcheck:
@@ -95,7 +117,7 @@ services:
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
 
     # Resource limits (adjust based on your system)
     deploy:
@@ -114,6 +136,9 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ============================================================================
+  # TIMESCALEDB - Time-series database for multi-account tracking
+  # ============================================================================
   timescaledb:
     image: timescale/timescaledb:latest-pg15
     container_name: kael-timescaledb
@@ -124,10 +149,16 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-kael}
     volumes:
       - ./pgdata:/var/lib/postgresql/data
+      - ./database/multi_account_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     ports:
       - "5432:5432"
     networks:
       - trading-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ============================================================================
   # PROMETHEUS - Metrics Collection
@@ -193,29 +224,6 @@ services:
     depends_on:
       - timescaledb
 
-  # ============================================================================
-  # ANGULAR DASHBOARD - Modern Trading UI (DISABLED - TypeScript build errors)
-  # Use Flask dashboard at http://localhost:5001/dashboard instead
-  # ============================================================================
-  # dashboard-ui:
-  #   build:
-  #     context: ./dashboard-ui
-  #     dockerfile: Dockerfile
-  #   container_name: kael-dashboard-ui
-  #   restart: unless-stopped
-  #   ports:
-  #     - "4200:80"
-  #   networks:
-  #     - trading-network
-  #   depends_on:
-  #     - parallel-trading-bot
-  #     - grafana
-  #     - prometheus
-  #   environment:
-  #     - API_URL=http://kael-parallel-trading-bot:5001
-  #     - GRAFANA_URL=http://grafana:3000
-  #     - PROMETHEUS_URL=http://prometheus:9090
-
 networks:
   trading-network:
     driver: bridge
@@ -223,7 +231,3 @@ networks:
 volumes:
   prometheus-data:
   grafana-data:
-
-  # Optional TimescaleDB/Postgres service used by the bot when DATABASE_URL is set
-  # NOTE: defined as a sibling service to parallel-trading-bot above
-  

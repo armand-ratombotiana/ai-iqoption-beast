@@ -227,6 +227,30 @@ class DatabaseManager:
 
         self.execute_query(query, params)
 
+    def insert_strategy_vote(self, vote_data: Dict[str, Any]):
+        """
+        Insert a per-strategy vote record
+
+        Args:
+            vote_data: dict with keys: trade_id, strategy_name, voted_direction, voted_for_executed (bool), trade_result, profit
+        """
+        query = """
+        INSERT INTO strategy_votes (
+            trade_id, strategy_name, voted_direction, voted_for_executed, trade_result, profit
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """
+
+        params = (
+            vote_data.get('trade_id'),
+            vote_data.get('strategy_name'),
+            vote_data.get('voted_direction'),
+            1 if vote_data.get('voted_for_executed') else 0,
+            vote_data.get('trade_result'),
+            vote_data.get('profit', 0.0)
+        )
+
+        self.execute_query(query, params)
+
     def insert_market_context(self, context_data: Dict[str, Any]):
         """
         Insert market context data
@@ -334,6 +358,46 @@ class DatabaseManager:
             params.append(f'-{hours} hours')
 
         params.append(limit)
+
+        # Prefer aggregated stats from strategy_votes if available (more granular)
+        try:
+            # Check if strategy_votes table exists
+            conn = self.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='strategy_votes'")
+            if cur.fetchone():
+                # Use view v_strategy_performance if present
+                q = "SELECT * FROM v_strategy_performance"
+                if hours:
+                    q = "SELECT * FROM v_strategy_performance WHERE 1=1"  # view doesn't have time, fallback to table
+                    # filter by timestamp in strategy_votes
+                    q = """
+                    SELECT
+                        strategy_name,
+                        COUNT(*) as total_trades,
+                        SUM(CASE WHEN trade_result = 'WIN' THEN 1 ELSE 0 END) as wins,
+                        SUM(CASE WHEN trade_result = 'LOSS' THEN 1 ELSE 0 END) as losses,
+                        ROUND(AVG(CASE WHEN trade_result = 'WIN' THEN 1.0 ELSE 0.0 END) * 100, 2) as win_rate,
+                        ROUND(SUM(profit), 2) as total_profit,
+                        ROUND(AVG(profit), 2) as avg_profit_per_trade,
+                        ROUND(MAX(profit), 2) as best_trade,
+                        ROUND(MIN(profit), 2) as worst_trade
+                    FROM strategy_votes
+                    WHERE voted_for_executed = 1
+                      AND timestamp >= datetime('now', ?)
+                    GROUP BY strategy_name
+                    ORDER BY total_profit DESC
+                    LIMIT ?
+                    """
+                    params2 = (f'-{hours} hours', limit)
+                    return self.fetch_all(q, params2)
+                else:
+                    q = "SELECT * FROM v_strategy_performance LIMIT ?"
+                    return self.fetch_all(q, (limit,))
+
+        except Exception:
+            # fallback to older trades.selected_strategy aggregation
+            pass
 
         query = f"""
         SELECT

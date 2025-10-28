@@ -128,6 +128,39 @@ class TradeLogger:
         except Exception as e:
             self.logger.error(f"❌ Failed to log AI predictions for {trade_id}: {e}")
 
+    def log_strategy_votes(self, trade_id: str, breakdown: List[Dict[str, Any]],
+                           executed_direction: Optional[str] = None,
+                           trade_result: Optional[str] = None,
+                           profit: float = 0.0):
+        """
+        Log per-strategy votes/outcomes into the strategy_votes table.
+
+        Args:
+            trade_id: Trade identifier
+            breakdown: List of dicts with {'strategy': name, 'vote': 'CALL'|'PUT'|'NEUTRAL', 'score': float}
+            executed_direction: The direction that was executed for the trade
+            trade_result: 'WIN'|'LOSS'|'DRAW'|'PENDING'|'FAILED'
+            profit: Profit amount (float)
+        """
+        try:
+            for b in breakdown:
+                name = b.get('strategy') or 'unknown'
+                vote = b.get('vote') or 'NEUTRAL'
+                voted_for_executed = (executed_direction is not None and vote == executed_direction)
+                vote_data = {
+                    'trade_id': trade_id,
+                    'strategy_name': name,
+                    'voted_direction': vote,
+                    'voted_for_executed': voted_for_executed,
+                    'trade_result': trade_result,
+                    'profit': profit
+                }
+                self.db.insert_strategy_vote(vote_data)
+
+            self.logger.info(f"✅ Logged {len(breakdown)} strategy votes for {trade_id}")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log strategy votes for {trade_id}: {e}")
+
     def log_market_context(self, trade_id: str, context: Dict[str, Any]):
         """
         Log comprehensive market context

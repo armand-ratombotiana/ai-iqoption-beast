@@ -107,6 +107,7 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
 # Expose health API port
 EXPOSE 5001
 
-# Run the multi-account parallel trading bot (or autonomous_parallel_trading_bot.py for single-account mode)
-# Default to multi-account mode
-CMD ["python", "multi_account_parallel_bot.py"]
+# Run the bot based on environment variable BOT_TYPE
+# Choices: ultimate_strategy_evaluator.py (default), autonomous_parallel_trading_bot.py,
+#          autonomous_parallel_trading_bot_strategy_threads.py, multi_account_parallel_bot.py
+CMD sh -c 'python ${BOT_TYPE:-ultimate_strategy_evaluator.py}'

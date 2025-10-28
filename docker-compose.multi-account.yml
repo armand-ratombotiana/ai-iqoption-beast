@@ -1,0 +1,213 @@
+services:
+  # ============================================================================
+  # KAEL Multi-Account Parallel Trading Bot - 5 Accounts with Different Strategies
+  # ============================================================================
+  multi-account-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.parallel
+    container_name: kael-multi-account-bot
+    restart: unless-stopped
+
+    environment:
+      # ========================================================================
+      # MULTI-ACCOUNT MODE (ENABLED)
+      # ========================================================================
+      - ENABLE_MULTI_ACCOUNT=true
+
+      # ========================================================================
+      # TRADING MODE (CRITICAL: Change to 'live' for real money trading)
+      # ========================================================================
+      - TRADING_MODE=${TRADING_MODE:-demo}
+
+      # ========================================================================
+      # STRATEGY SETTINGS
+      # ========================================================================
+      - USE_ADVANCED_STRATEGIES=true
+      - STRATEGY_SCAN_INTERVAL=5
+
+      # ========================================================================
+      # BINARY OPTIONS SETTINGS
+      # ========================================================================
+      - BASE_TRADE_AMOUNT=${BASE_TRADE_AMOUNT:-1.0}
+      - MIN_PAYOUT_RATIO=0.65
+      - TRADING_ASSETS=${TRADING_ASSETS:-EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,NZDUSD,EURJPY,GBPJPY,EURGBP,AUDJPY,EURAUD,GBPAUD,USDCHF,EURCAD,GBPCAD,AUDCAD}
+
+      # ========================================================================
+      # RISK MANAGEMENT
+      # ========================================================================
+      - MAX_CONSECUTIVE_LOSSES=5
+      - MIN_BALANCE=50
+      - MIN_SECONDS_BETWEEN_TRADES=70
+
+      # ========================================================================
+      # TIMING
+      # ========================================================================
+      - WAIT_FOR_RESULT_SECONDS=65
+      - MIN_TIME_TO_EXPIRY_SECONDS=40
+      - MAX_TIME_TO_EXPIRY_SECONDS=55
+
+      # ========================================================================
+      # API RATE LIMITING
+      # ========================================================================
+      - API_MIN_INTERVAL=0.3
+      - API_MAX_RETRIES=3
+      - API_RETRY_BACKOFF=1.5
+
+      # ========================================================================
+      # HEALTH MONITORING
+      # ========================================================================
+      - ENABLE_HEALTH_API=true
+      - HEALTH_API_PORT=5001
+
+      # ========================================================================
+      # DATABASE (REQUIRED for multi-account)
+      # ========================================================================
+      - DATABASE_URL=postgresql://postgres:postgres@timescaledb:5432/kael
+
+      # ========================================================================
+      # LOGGING
+      # ========================================================================
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    ports:
+      # Health API endpoint
+      - "5001:5001"
+
+    volumes:
+      # Persist logs outside container
+      - ./logs:/app/app/KAEL/KAEL/logs
+      # Persist reports
+      - ./reports:/app/app/KAEL/KAEL/reports
+      # Persist config (for accounts.json)
+      - ./config:/app/app/KAEL/KAEL/config
+      # Mount .env file (read-only)
+      - ./.env:/app/app/KAEL/KAEL/.env:ro
+
+    networks:
+      - trading-network
+
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+    # Health monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # TIMESCALEDB - Time-series database for multi-account tracking
+  # ============================================================================
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: kael-timescaledb
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-kael}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - ./database/multi_account_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # PROMETHEUS - Metrics Collection
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kael-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    networks:
+      - trading-network
+    depends_on:
+      - multi-account-bot
+
+  # ============================================================================
+  # GRAFANA - Metrics Visualization
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kael-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - trading-network
+    depends_on:
+      - prometheus
+
+  # ============================================================================
+  # POSTGRES EXPORTER - Database Metrics
+  # ============================================================================
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    container_name: kael-postgres-exporter
+    restart: unless-stopped
+    environment:
+      - DATA_SOURCE_NAME=postgresql://postgres:postgres@timescaledb:5432/kael?sslmode=disable
+    ports:
+      - "9187:9187"
+    networks:
+      - trading-network
+    depends_on:
+      - timescaledb
+
+networks:
+  trading-network:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:

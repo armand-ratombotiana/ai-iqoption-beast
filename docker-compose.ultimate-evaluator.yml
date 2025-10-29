@@ -182,18 +182,74 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_SERVER_ROOT_URL=http://localhost:3001
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     ports:
-      - "3000:3000"
+      - "3001:3000"
     networks:
       - trading-network
     depends_on:
       - prometheus
+
+  # ============================================================================
+  # REACT DASHBOARD - Modern UI for Strategy Evaluation
+  # ============================================================================
+  dashboard-react:
+    build:
+      context: ./dashboard-ui-react
+      dockerfile: Dockerfile
+    container_name: kael-dashboard-react
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - trading-network
+    depends_on:
+      ultimate-evaluator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # ANGULAR DASHBOARD - Alternative UI for Strategy Evaluation
+  # ============================================================================
+  dashboard-angular:
+    build:
+      context: ./dashboard-ui
+      dockerfile: Dockerfile
+    container_name: kael-dashboard-angular
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    networks:
+      - trading-network
+    depends_on:
+      ultimate-evaluator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   trading-network:

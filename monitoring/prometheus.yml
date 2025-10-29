@@ -5,12 +5,13 @@ global:
     monitor: 'kael-trading-bot'
 
 scrape_configs:
-  # KAEL Trading Bot metrics
-  - job_name: 'kael-bot'
+  # KAEL Ultimate Strategy Evaluator metrics
+  - job_name: 'kael-ultimate-evaluator'
     static_configs:
-      - targets: ['kael-parallel-trading-bot:5001']
+      - targets: ['ultimate-evaluator:5001']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: 15s
+    scrape_timeout: 10s
 
   # TimescaleDB metrics (if postgres_exporter is added)
   - job_name: 'timescaledb'

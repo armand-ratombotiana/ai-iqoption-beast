@@ -1210,9 +1210,14 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
             return jsonify({'trades': []}), 200
 
         try:
-            # Query database for recent trades
+            # Query database for recent trades with timeout to prevent hanging
             import psycopg2
-            conn = psycopg2.connect(UltimateEvaluatorConfig.DATABASE_URL)
+
+            # Create connection with timeout to prevent hanging
+            conn = psycopg2.connect(
+                UltimateEvaluatorConfig.DATABASE_URL,
+                connect_timeout=5
+            )
             cursor = conn.cursor()
 
             cursor.execute("""
@@ -1244,6 +1249,7 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
             return jsonify({'trades': trades})
 
         except Exception as e:
+            app.logger.error(f"Error fetching recent trades: {e}")
             return jsonify({'trades': [], 'error': str(e)}), 200
 
     @app.route('/strategy_stats', methods=['GET'])
@@ -1297,9 +1303,11 @@ def start_health_server(app: Flask, logger: logging.Logger):
             app,
             host='0.0.0.0',
             port=UltimateEvaluatorConfig.HEALTH_API_PORT,
-            threads=8,
-            channel_timeout=60,
-            log_socket_errors=False
+            threads=32,  # Increased from 8 to handle concurrent dashboard + Prometheus requests
+            channel_timeout=120,  # Increased from 60 to prevent premature timeouts
+            log_socket_errors=False,
+            asyncore_use_poll=True,  # Better performance for many connections
+            backlog=64  # Queue up to 64 connections before rejecting
         )
     except Exception:
         logger.warning("⚠️ Health API running with Flask's built-in server")

@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from collections import deque
 import queue
 import statistics
+import numpy as np
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -513,7 +514,7 @@ class UltimateEvaluatorConfig:
     # Database
     DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/kael')
 
-    # 10+ Strategies to Evaluate
+    # 7 Strategies to Evaluate (implemented in AdvancedStrategyEngine)
     STRATEGIES_TO_EVALUATE = [
         'enhanced_candle_count',
         'rsi_divergence',
@@ -522,9 +523,10 @@ class UltimateEvaluatorConfig:
         'stochastic',
         'support_resistance',
         'trend_alignment',
-        'ema_crossover',
-        'volume_analysis',
-        'price_action_patterns'
+        # Note: The following strategies are not yet implemented in AdvancedStrategyEngine
+        # 'ema_crossover',
+        # 'volume_analysis',
+        # 'price_action_patterns'
     ]
 
 
@@ -622,13 +624,34 @@ class StrategyEvaluatorThread:
             if not self.strategy_engine:
                 return None
 
-            signal = self.strategy_engine.analyze(candles)
+            # Convert to numpy arrays for specific strategy methods
+            closes = np.array([c['close'] for c in candles], dtype=float)
+            opens = np.array([c['open'] for c in candles], dtype=float)
+            highs = np.array([c.get('max', c['close']) for c in candles], dtype=float)
+            lows = np.array([c.get('min', c['close']) for c in candles], dtype=float)
+            volumes = np.array([c.get('volume', 0) for c in candles], dtype=float)
 
-            if signal.direction == 'NEUTRAL':
+            # Call specific strategy method based on strategy name
+            signal = None
+            if self.strategy_name == 'enhanced_candle_count':
+                signal = self.strategy_engine.enhanced_candle_count(candles, closes, opens)
+            elif self.strategy_name == 'rsi_divergence':
+                signal = self.strategy_engine.rsi_divergence_strategy(closes, highs, lows)
+            elif self.strategy_name == 'macd_momentum':
+                signal = self.strategy_engine.macd_momentum_strategy(closes)
+            elif self.strategy_name == 'bollinger_rsi_combo':
+                signal = self.strategy_engine.bollinger_rsi_combo(closes)
+            elif self.strategy_name == 'stochastic':
+                signal = self.strategy_engine.stochastic_strategy(highs, lows, closes)
+            elif self.strategy_name == 'support_resistance':
+                signal = self.strategy_engine.support_resistance_strategy(highs, lows, closes)
+            elif self.strategy_name == 'trend_alignment':
+                signal = self.strategy_engine.trend_alignment_strategy(closes)
+            else:
+                self.logger.warning(f"Strategy {self.strategy_name} not implemented")
                 return None
 
-            # Check if this signal is from our target strategy
-            if signal.strategy_name != self.strategy_name:
+            if not signal or signal.direction == 'NEUTRAL':
                 return None
 
             # Get strategy metrics for calibration
@@ -1122,6 +1145,145 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
     def metrics():
         """Prometheus metrics endpoint"""
         return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+    @app.route('/performance', methods=['GET'])
+    def performance():
+        """Get performance metrics (alias for /statistics for Angular dashboard compatibility)"""
+        stats = evaluator.get_statistics()
+        return jsonify({
+            'summary': {
+                'balance': stats['current_balance'],
+                'daily_pnl': stats['daily_pnl'],
+                'roi_percent': stats['roi'],
+                'win_rate': stats['portfolio_win_rate'],
+                'total_trades': stats['total_trades'],
+                'wins': stats['total_wins'],
+                'losses': stats['total_losses']
+            },
+            'streaks': {
+                'current_win_streak': 0,  # Calculate from strategies if needed
+                'current_loss_streak': 0,
+                'best_win_streak': 0,
+                'worst_loss_streak': 0
+            },
+            'limits': {
+                'max_concurrent_instruments': 10,
+                'max_daily_loss': UltimateEvaluatorConfig.MAX_DAILY_LOSS,
+                'remaining_loss_budget': max(0, UltimateEvaluatorConfig.MAX_DAILY_LOSS - abs(stats['daily_pnl']))
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+
+    @app.route('/config', methods=['GET'])
+    def config():
+        """Get bot configuration"""
+        return jsonify({
+            'trading': {
+                'mode': UltimateEvaluatorConfig.TRADING_MODE,
+                'min_payout_ratio': UltimateEvaluatorConfig.MIN_PAYOUT_RATIO,
+                'expiration_seconds': UltimateEvaluatorConfig.BINARY_OPTION_DURATION * 60
+            },
+            'strategy': {
+                'advanced_strategies_enabled': ADVANCED_STRATEGIES_AVAILABLE,
+                'min_confidence': UltimateEvaluatorConfig.MIN_CONFIDENCE_BASE,
+                'min_confluence': 'N/A',
+                'max_trade_amount': UltimateEvaluatorConfig.BASE_TRADE_AMOUNT
+            }
+        })
+
+    @app.route('/active_trades', methods=['GET'])
+    def active_trades():
+        """Get active trades"""
+        # For now return empty as we don't track active trades in memory
+        # This would require enhancing the evaluator to track pending trades
+        return jsonify({
+            'active_count': 0,
+            'active_trades': []
+        })
+
+    @app.route('/recent_trades', methods=['GET'])
+    def recent_trades():
+        """Get recent trades from database"""
+        limit = int(request.args.get('limit', 10))
+
+        if not evaluator.db_logger:
+            return jsonify({'trades': []}), 200
+
+        try:
+            # Query database for recent trades
+            import psycopg2
+            conn = psycopg2.connect(UltimateEvaluatorConfig.DATABASE_URL)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT trade_id, instrument, direction, amount, entry_time,
+                       exit_time, result, profit, payout_ratio, selected_strategy
+                FROM trades
+                ORDER BY entry_time DESC
+                LIMIT %s
+            """, (limit,))
+
+            trades = []
+            for row in cursor.fetchall():
+                trades.append({
+                    'id': row[0],
+                    'instrument': row[1],
+                    'direction': row[2],
+                    'amount': float(row[3]) if row[3] else 0,
+                    'entry_time': row[4].isoformat() if row[4] else None,
+                    'exit_time': row[5].isoformat() if row[5] else None,
+                    'result': row[6],
+                    'profit': float(row[7]) if row[7] else None,
+                    'payout_ratio': float(row[8]) if row[8] else None,
+                    'selected_strategy': row[9]
+                })
+
+            cursor.close()
+            conn.close()
+
+            return jsonify({'trades': trades})
+
+        except Exception as e:
+            return jsonify({'trades': [], 'error': str(e)}), 200
+
+    @app.route('/strategy_stats', methods=['GET'])
+    def strategy_stats():
+        """Get strategy statistics (maps to /strategies)"""
+        hours = request.args.get('hours', type=int)
+        stats = evaluator.get_statistics()
+        strategies = stats.get('strategies', {})
+
+        # Convert to format expected by Angular dashboard
+        strategy_list = []
+        for name, metrics in strategies.items():
+            strategy_list.append({
+                'strategy_name': name,
+                'total_trades': metrics['total_trades'],
+                'wins': metrics['wins'],
+                'losses': metrics['losses'],
+                'win_rate': metrics['win_rate'],
+                'total_profit': metrics['total_pnl'],
+                'avg_profit_per_trade': metrics['total_pnl'] / metrics['total_trades'] if metrics['total_trades'] > 0 else 0,
+                'best_trade': 0,  # Would need to track this
+                'worst_trade': 0,  # Would need to track this
+                'avg_payout_percent': metrics['avg_payout'] * 100
+            })
+
+        return jsonify({
+            'strategy_stats': strategy_list,
+            'time_period': f'last_{hours}_hours' if hours else 'all_time',
+            'total_strategies': len(strategy_list)
+        })
+
+    @app.route('/pause', methods=['POST'])
+    def pause():
+        """Pause trading (placeholder)"""
+        return jsonify({'message': 'Pause not implemented - use /stop to shutdown'})
+
+    @app.route('/resume', methods=['POST'])
+    def resume():
+        """Resume trading (placeholder)"""
+        return jsonify({'message': 'Resume not implemented - restart the evaluator to resume'})
 
     return app
 

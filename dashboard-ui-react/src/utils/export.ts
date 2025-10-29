@@ -47,15 +47,15 @@ export async function exportToExcel(data: PortfolioStats) {
   Object.values(data.strategies).forEach((strategy: StrategyMetrics) => {
     strategiesData.push([
       strategy.strategy_name,
-      strategy.total_trades,
-      strategy.wins,
-      strategy.losses,
-      strategy.win_rate,
-      strategy.total_pnl,
-      strategy.avg_confidence,
-      strategy.sharpe_ratio,
-      strategy.kelly_fraction,
-      strategy.current_streak,
+      strategy.total_trades.toString(),
+      strategy.wins.toString(),
+      strategy.losses.toString(),
+      strategy.win_rate.toString(),
+      strategy.total_pnl.toString(),
+      strategy.avg_confidence.toString(),
+      strategy.sharpe_ratio.toString(),
+      strategy.kelly_fraction.toString(),
+      strategy.current_streak.toString(),
     ]);
   });
 

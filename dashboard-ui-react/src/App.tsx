@@ -18,7 +18,7 @@ import { exportToExcel, exportToPDF } from './utils/export';
 import { formatRelativeTime } from './utils/format';
 
 function App() {
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh] = useState(true);
   const { data, loading, error, refetch } = usePortfolioStats(autoRefresh, 5000);
 
   const handleExport = async () => {
@@ -26,11 +26,6 @@ function App() {
       toast.error('No data available to export');
       return;
     }
-
-    const exportMenu = [
-      { label: 'Export to Excel', action: () => exportToExcel(data) },
-      { label: 'Export to PDF', action: () => exportToPDF(data) },
-    ];
 
     // Simple export for now - in production, you'd show a menu
     try {

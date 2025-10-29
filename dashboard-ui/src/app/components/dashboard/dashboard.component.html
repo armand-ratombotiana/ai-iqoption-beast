@@ -94,7 +94,7 @@
       <div class="metric">
         <span class="metric-label">Min Confidence:</span>
         <span class="metric-value">
-          {{ config?.strategy?.min_confidence !== 'N/A' && config?.strategy?.min_confidence ? (config.strategy.min_confidence * 100 | number:'1.0-0') + '%' : 'N/A' }}
+          {{ config?.strategy?.min_confidence !== 'N/A' && config?.strategy?.min_confidence ? ((+config.strategy.min_confidence) * 100 | number:'1.0-0') + '%' : 'N/A' }}
         </span>
       </div>
       <div class="metric">

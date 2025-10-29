@@ -14,7 +14,7 @@ import { KPICard } from './components/KPICard';
 import { StrategyTable } from './components/StrategyTable';
 import { PerformanceChart } from './components/PerformanceChart';
 import { usePortfolioStats } from './hooks/usePortfolioStats';
-import { exportToExcel, exportToPDF } from './utils/export';
+import { exportToExcel } from './utils/export';
 import { formatRelativeTime } from './utils/format';
 
 function App() {

@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS trades (
     id SERIAL PRIMARY KEY,
     account_id VARCHAR(50) NOT NULL REFERENCES accounts(account_id),
-    trade_id VARCHAR(100) UNIQUE,
+    trade_id VARCHAR(100),
     instrument VARCHAR(50) NOT NULL,
     direction VARCHAR(10) NOT NULL,
     amount DECIMAL(10, 2) NOT NULL,
@@ -59,19 +59,21 @@ CREATE TABLE IF NOT EXISTS trades (
     
     -- Metadata
     mode VARCHAR(10) DEFAULT 'demo',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Indexes
-    INDEX idx_trades_account (account_id),
-    INDEX idx_trades_entry_time (entry_time DESC),
-    INDEX idx_trades_instrument (instrument),
-    INDEX idx_trades_strategy (selected_strategy),
-    INDEX idx_trades_result (result),
-    INDEX idx_trades_account_entry (account_id, entry_time DESC)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Convert to hypertable for time-series optimization (TimescaleDB)
 SELECT create_hypertable('trades', 'entry_time', if_not_exists => TRUE);
+
+-- Create indexes for trades table
+CREATE INDEX IF NOT EXISTS idx_trades_account ON trades(account_id);
+CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON trades(entry_time DESC);
+CREATE INDEX IF NOT EXISTS idx_trades_instrument ON trades(instrument);
+CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades(selected_strategy);
+CREATE INDEX IF NOT EXISTS idx_trades_result ON trades(result);
+CREATE INDEX IF NOT EXISTS idx_trades_account_entry ON trades(account_id, entry_time DESC);
+-- Unique index for trade_id including partitioning column (required for hypertable)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_trade_id_unique ON trades(trade_id, entry_time);
 
 -- ============================================================================
 -- ACCOUNT PERFORMANCE TABLE (Daily snapshots)
@@ -445,7 +447,8 @@ CREATE INDEX IF NOT EXISTS idx_strategy_perf_strategy_date ON strategy_performan
 
 -- Insert default accounts (will be managed by MultiAccountManager)
 INSERT INTO accounts (account_id, email, strategy_profile, max_daily_loss, max_trade_amount)
-VALUES 
+VALUES
+    ('evaluation_account', 'evaluation@kael.local', 'ultimate_evaluator', 10.0, 1.0),
     ('account_1', 'tombonirinakaej@gmail.com', 'conservative', 5.0, 1.5),
     ('account_2', 'tombokael4@gmail.com', 'moderate', 8.0, 2.0),
     ('account_3', 'ruslantombofitiavana@gmail.com', 'aggressive', 15.0, 3.0),

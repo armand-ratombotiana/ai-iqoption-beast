@@ -74,6 +74,32 @@ except ImportError:
     print("❌ Advanced strategies not available")
     sys.exit(1)
 
+# Binary Options Engine (NEW)
+USE_BINARY_ENGINE = os.getenv('USE_BINARY_ENGINE', 'true').lower() == 'true'
+try:
+    if USE_BINARY_ENGINE:
+        from strategies.binary_options_engine import BinaryOptionsEngine, BinarySignal, MarketSnapshot
+        BINARY_ENGINE_AVAILABLE = True
+        print("✅ Binary Options Engine loaded")
+    else:
+        BINARY_ENGINE_AVAILABLE = False
+except ImportError as e:
+    BINARY_ENGINE_AVAILABLE = False
+    print(f"⚠️  Binary Options Engine not available: {e}")
+
+# AI Data Collector (NEW)
+USE_AI_COLLECTOR = os.getenv('USE_AI_COLLECTOR', 'true').lower() == 'true'
+try:
+    if USE_AI_COLLECTOR:
+        from database.ai_data_collector import AIDataCollector
+        AI_COLLECTOR_AVAILABLE = True
+        print("✅ AI Data Collector loaded")
+    else:
+        AI_COLLECTOR_AVAILABLE = False
+except ImportError as e:
+    AI_COLLECTOR_AVAILABLE = False
+    print(f"⚠️  AI Data Collector not available: {e}")
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
@@ -570,15 +596,17 @@ class StrategyEvaluatorThread:
 
     def __init__(self, strategy_name: str, api_client: ApiClient,
                  portfolio_manager: PortfolioStateManager,
-                 db_logger, logger: logging.Logger):
+                 db_logger, logger: logging.Logger, ai_collector=None):
         self.strategy_name = strategy_name
         self.api_client = api_client
         self.portfolio = portfolio_manager
         self.db_logger = db_logger
+        self.ai_collector = ai_collector
         self.logger = logging.getLogger(f"Strategy-{strategy_name}")
 
-        # Strategy engine
+        # Strategy engines
         self.strategy_engine = AdvancedStrategyEngine() if ADVANCED_STRATEGIES_AVAILABLE else None
+        self.binary_engine = BinaryOptionsEngine() if BINARY_ENGINE_AVAILABLE else None
 
         # Thread control
         self.running = False
@@ -862,6 +890,7 @@ class UltimateStrategyEvaluator:
             initial_balance=UltimateEvaluatorConfig.FICTITIOUS_START_BALANCE
         )
         self.db_logger = None
+        self.ai_collector = None
         self.strategy_threads: Dict[str, StrategyEvaluatorThread] = {}
         self.api = None
         self.api_client = None
@@ -877,6 +906,15 @@ class UltimateStrategyEvaluator:
                 self.logger.info("✅ Database logging enabled")
             except Exception as e:
                 self.logger.warning(f"⚠️ Database initialization failed: {e}")
+
+        # Initialize AI Data Collector (NEW)
+        if AI_COLLECTOR_AVAILABLE:
+            try:
+                self.ai_collector = AIDataCollector(UltimateEvaluatorConfig.DATABASE_URL)
+                self.logger.info("✅ AI Data Collector initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ AI Data Collector initialization failed: {e}")
+                self.ai_collector = None
 
     def connect_to_broker(self) -> bool:
         """Connect to IQ Option"""
@@ -931,7 +969,7 @@ class UltimateStrategyEvaluator:
         for strategy_name in UltimateEvaluatorConfig.STRATEGIES_TO_EVALUATE:
             thread = StrategyEvaluatorThread(
                 strategy_name, self.api_client, self.portfolio,
-                self.db_logger, self.logger
+                self.db_logger, self.logger, self.ai_collector
             )
             self.strategy_threads[strategy_name] = thread
             self.logger.info(f"   ✅ {strategy_name}")

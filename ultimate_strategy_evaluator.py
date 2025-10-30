@@ -596,12 +596,13 @@ class StrategyEvaluatorThread:
 
     def __init__(self, strategy_name: str, api_client: ApiClient,
                  portfolio_manager: PortfolioStateManager,
-                 db_logger, logger: logging.Logger, ai_collector=None):
+                 db_logger, logger: logging.Logger, ai_collector=None, evaluator=None):
         self.strategy_name = strategy_name
         self.api_client = api_client
         self.portfolio = portfolio_manager
         self.db_logger = db_logger
         self.ai_collector = ai_collector
+        self.evaluator = evaluator  # Reference to main evaluator for coordination
         self.logger = logging.getLogger(f"Strategy-{strategy_name}")
 
         # Strategy engines
@@ -612,6 +613,11 @@ class StrategyEvaluatorThread:
         self.running = False
         self.thread = None
         self.last_trade_time = 0
+        self.last_analysis_time = 0  # NEW: Track analysis separately from trades
+        
+        # Stagger execution to prevent simultaneous trades
+        self.execution_offset = (hash(strategy_name) % 10)  # 0-9 second offset
+        self.last_heartbeat = time.time()  # For heartbeat logging
 
         # Statistics
         self.trades_today = 0
@@ -830,10 +836,21 @@ class StrategyEvaluatorThread:
     def run(self):
         """Main strategy evaluation loop"""
         self.running = True
-        self.logger.info(f"🚀 Strategy thread started: {self.strategy_name}")
+        self.logger.info(f"🚀 Strategy thread started: {self.strategy_name} (offset: {self.execution_offset}s)")
+        
+        # Stagger initial execution to prevent simultaneous starts
+        time.sleep(self.execution_offset)
 
         while self.running:
             try:
+                # Heartbeat logging every 60 seconds
+                if time.time() - self.last_heartbeat > 60:
+                    self.logger.debug(f"💓 Heartbeat: {self.strategy_name} alive, trades={self.trades_today}")
+                    self.last_heartbeat = time.time()
+                
+                # Update analysis time
+                self.last_analysis_time = time.time()
+                
                 if not self.can_trade():
                     time.sleep(UltimateEvaluatorConfig.STRATEGY_SCAN_INTERVAL)
                     continue
@@ -851,16 +868,30 @@ class StrategyEvaluatorThread:
                     analysis = self.analyze_instrument(instrument)
                     if analysis:
                         direction, confidence, reasons, payout_ratio = analysis
+                        
+                        # Check global trade coordination if evaluator is available
+                        if self.evaluator and hasattr(self.evaluator, 'trade_lock'):
+                            with self.evaluator.trade_lock:
+                                time_since_global = time.time() - self.evaluator.last_global_trade_time
+                                if time_since_global < 10:  # 10 second cooldown
+                                    self.logger.debug("⏳ Another strategy just traded, waiting...")
+                                    time.sleep(5)
+                                    continue
+                                # Update global trade time
+                                self.evaluator.last_global_trade_time = time.time()
+                        
                         result = self.execute_trade(instrument, direction, confidence, reasons, payout_ratio)
                         if result:
-                            # Wait before next trade
-                            time.sleep(UltimateEvaluatorConfig.MIN_SECONDS_BETWEEN_TRADES)
+                            # Wait before next trade (reduced from MIN_SECONDS_BETWEEN_TRADES)
+                            # since we already waited 65 seconds for result
+                            time.sleep(10)  # Just 10 seconds cooldown after trade completes
                             break
 
                 time.sleep(UltimateEvaluatorConfig.STRATEGY_SCAN_INTERVAL)
 
             except Exception as e:
                 self.logger.error(f"Run error: {e}")
+                traceback.print_exc()
                 time.sleep(30)
 
     def start(self):
@@ -895,6 +926,10 @@ class UltimateStrategyEvaluator:
         self.api = None
         self.api_client = None
         self.running = False
+        
+        # NEW: Global trade coordination to prevent simultaneous trades
+        self.trade_lock = threading.Lock()
+        self.last_global_trade_time = 0
 
         # Initialize database
         if DB_LOGGING_ENABLED:
@@ -969,7 +1004,7 @@ class UltimateStrategyEvaluator:
         for strategy_name in UltimateEvaluatorConfig.STRATEGIES_TO_EVALUATE:
             thread = StrategyEvaluatorThread(
                 strategy_name, self.api_client, self.portfolio,
-                self.db_logger, self.logger, self.ai_collector
+                self.db_logger, self.logger, self.ai_collector, self  # Pass evaluator reference
             )
             self.strategy_threads[strategy_name] = thread
             self.logger.info(f"   ✅ {strategy_name}")

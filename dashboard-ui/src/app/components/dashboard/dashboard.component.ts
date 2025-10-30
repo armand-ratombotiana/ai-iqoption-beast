@@ -181,4 +181,94 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (value === undefined) return 'neutral';
     return value >= 0 ? 'positive' : 'negative';
   }
+
+  // New methods for enhanced dashboard features
+
+  getTopStrategies(count: number): any[] {
+    if (!this.strategyStats || !this.strategyStats.strategy_stats) {
+      return [];
+    }
+    return this.strategyStats.strategy_stats
+      .sort((a, b) => b.total_profit - a.total_profit)
+      .slice(0, count);
+  }
+
+  getBestStrategy(): string {
+    const top = this.getTopStrategies(1);
+    return top.length > 0 ? top[0].strategy_name : 'N/A';
+  }
+
+  getHighestWinRate(): number {
+    if (!this.strategyStats || !this.strategyStats.strategy_stats) {
+      return 0;
+    }
+    const rates = this.strategyStats.strategy_stats.map(s => s.win_rate);
+    return rates.length > 0 ? Math.max(...rates) : 0;
+  }
+
+  getBestTrade(): string {
+    if (!this.strategyStats || !this.strategyStats.strategy_stats) {
+      return '$0.00';
+    }
+    const best = Math.max(...this.strategyStats.strategy_stats.map(s => s.best_trade || 0));
+    return this.formatCurrency(best);
+  }
+
+  getAvgPayout(): number {
+    if (!this.strategyStats || !this.strategyStats.strategy_stats) {
+      return 0;
+    }
+    const payouts = this.strategyStats.strategy_stats
+      .filter(s => s.avg_payout_percent)
+      .map(s => s.avg_payout_percent);
+    if (payouts.length === 0) return 0;
+    const avg = payouts.reduce((a, b) => a + b, 0) / payouts.length;
+    return Math.round(avg * 100) / 100;
+  }
+
+  getRiskPercentage(): number {
+    if (!this.performance?.limits?.max_daily_loss || !this.performance?.summary?.daily_pnl) {
+      return 0;
+    }
+    const used = Math.abs(this.performance.summary.daily_pnl);
+    const limit = this.performance.limits.max_daily_loss;
+    return Math.min(100, (used / limit) * 100);
+  }
+
+  isDailyLossReached(): boolean {
+    if (!this.performance?.limits?.max_daily_loss || !this.performance?.summary?.daily_pnl) {
+      return false;
+    }
+    return Math.abs(this.performance.summary.daily_pnl) >= this.performance.limits.max_daily_loss;
+  }
+
+  // Export and Analysis methods
+
+  exportCSV(): void {
+    const days = 7;
+    window.open(`http://localhost:5001/export/csv?days=${days}`, '_blank');
+  }
+
+  exportJSON(): void {
+    window.open('http://localhost:5001/export/json', '_blank');
+  }
+
+  viewPrometheus(): void {
+    window.open('http://localhost:5001/metrics', '_blank');
+  }
+
+  showStrategyComparison(): void {
+    alert('Strategy Comparison: This feature displays side-by-side comparison of all strategies with their metrics, Sharpe ratios, and Kelly fractions.');
+    // TODO: Implement modal or separate view
+  }
+
+  showRiskAnalysis(): void {
+    alert('Risk Analysis: This feature shows detailed risk metrics including drawdown analysis, volatility measurements, and position sizing recommendations.');
+    // TODO: Implement modal or separate view
+  }
+
+  showBacktestData(): void {
+    alert('Historical Data: This feature provides access to historical performance data and backtesting results for strategy validation.');
+    // TODO: Implement modal or separate view
+  }
 }

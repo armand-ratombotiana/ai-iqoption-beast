@@ -69,14 +69,37 @@ services:
       - HEALTH_API_PORT=5001
 
       # ========================================================================
-      # DATABASE (OPTIONAL - for advanced logging)
+      # DATABASE (for AI data collection and advanced logging)
       # ========================================================================
       - DATABASE_URL=postgresql://postgres:postgres@timescaledb:5432/kael
+      - ENABLE_DATABASE_LOGGING=true
+
+      # ========================================================================
+      # AI DATA COLLECTION (for custom model training)
+      # ========================================================================
+      - ENABLE_AI_DATA_COLLECTION=true
+      - AI_COLLECT_MARKET_SNAPSHOTS=true
+      - AI_SNAPSHOT_INTERVAL=60
+      - AI_COLLECT_FEATURES=true
+
+      # ========================================================================
+      # BINARY OPTIONS ENGINE
+      # ========================================================================
+      - USE_BINARY_ENGINE=true
+      - BINARY_ENGINE_MIN_CONFIDENCE=0.70
+      - BINARY_ENGINE_MAX_TRADES_PER_HOUR=10
+
+      # ========================================================================
+      # ADVANCED STRATEGIES MODULE
+      # ========================================================================
+      - ADVANCED_STRATEGIES_ENABLED=true
+      - STRATEGIES_TO_EVALUATE=enhanced_candle_count,rsi_divergence,macd_momentum,bollinger_rsi_combo,stochastic,support_resistance,trend_alignment
 
       # ========================================================================
       # LOGGING
       # ========================================================================
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENABLE_DETAILED_LOGGING=true
 
     ports:
       # Health API endpoint
@@ -136,7 +159,9 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-kael}
     volumes:
       - ./pgdata:/var/lib/postgresql/data
-      - ./database/multi_account_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      # Initialize both multi-account schema and AI schema
+      - ./database/multi_account_schema.sql:/docker-entrypoint-initdb.d/01-multi-account-schema.sql:ro
+      - ./database/init_ai_schema.sql:/docker-entrypoint-initdb.d/02-ai-schema.sql:ro
     ports:
       - "5432:5432"
     networks:
@@ -146,6 +171,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # ============================================================================
   # PROMETHEUS - Metrics Collection

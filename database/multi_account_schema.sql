@@ -250,11 +250,11 @@ ORDER BY total_pnl DESC;
 
 -- Recent trades across all accounts
 CREATE OR REPLACE VIEW v_recent_trades AS
-SELECT 
+SELECT
     t.id,
     t.account_id,
-    a.email,
-    a.strategy_profile,
+    COALESCE(a.email, 'default') as email,
+    COALESCE(a.strategy_profile, 'default') as strategy_profile,
     t.instrument,
     t.direction,
     t.amount,
@@ -266,7 +266,7 @@ SELECT
     t.selected_strategy,
     t.confidence
 FROM trades t
-JOIN accounts a ON t.account_id = a.account_id
+LEFT JOIN accounts a ON t.account_id = a.account_id
 ORDER BY t.entry_time DESC
 LIMIT 100;
 

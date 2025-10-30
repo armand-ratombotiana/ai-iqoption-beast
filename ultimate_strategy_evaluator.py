@@ -1057,33 +1057,50 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
     app = Flask(__name__)
 
     # Cache for statistics to avoid blocking calls
-    stats_cache = {'data': None, 'timestamp': 0}
-    CACHE_TTL = 2  # Cache for 2 seconds
+    stats_cache = {
+        'data': {
+            'current_balance': 100.0,
+            'initial_balance': 100.0,
+            'daily_pnl': 0.0,
+            'roi': 0.0,
+            'portfolio_win_rate': 0.0,
+            'max_drawdown': 0.0,
+            'total_trades': 0,
+            'total_wins': 0,
+            'total_losses': 0,
+            'active_strategies': 0,
+            'strategies': {}
+        },
+        'timestamp': 0,
+        'updating': False
+    }
+
+    def update_statistics_cache():
+        """Background thread to update statistics cache"""
+        while True:
+            try:
+                time.sleep(3)  # Update every 3 seconds
+                if not stats_cache['updating']:
+                    stats_cache['updating'] = True
+                    try:
+                        new_data = evaluator.get_statistics()
+                        stats_cache['data'] = new_data
+                        stats_cache['timestamp'] = time.time()
+                    except Exception as e:
+                        app.logger.error(f"Error updating statistics cache: {e}")
+                    finally:
+                        stats_cache['updating'] = False
+            except Exception as e:
+                app.logger.error(f"Cache update thread error: {e}")
+                time.sleep(5)
+
+    # Start background cache updater
+    import threading
+    cache_thread = threading.Thread(target=update_statistics_cache, daemon=True)
+    cache_thread.start()
 
     def get_cached_statistics():
-        """Get statistics with caching to avoid blocking"""
-        now = time.time()
-        if stats_cache['data'] is None or (now - stats_cache['timestamp']) > CACHE_TTL:
-            try:
-                stats_cache['data'] = evaluator.get_statistics()
-                stats_cache['timestamp'] = now
-            except Exception as e:
-                app.logger.error(f"Error getting statistics: {e}")
-                # Return cached data if available, otherwise return empty
-                if stats_cache['data'] is None:
-                    return {
-                        'current_balance': 0,
-                        'initial_balance': 0,
-                        'daily_pnl': 0,
-                        'roi': 0,
-                        'portfolio_win_rate': 0,
-                        'max_drawdown': 0,
-                        'total_trades': 0,
-                        'total_wins': 0,
-                        'total_losses': 0,
-                        'active_strategies': 0,
-                        'strategies': {}
-                    }
+        """Get statistics from cache (never blocks)"""
         return stats_cache['data']
 
     @app.after_request

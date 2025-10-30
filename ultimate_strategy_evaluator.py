@@ -1056,6 +1056,36 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
     """Create health monitoring API"""
     app = Flask(__name__)
 
+    # Cache for statistics to avoid blocking calls
+    stats_cache = {'data': None, 'timestamp': 0}
+    CACHE_TTL = 2  # Cache for 2 seconds
+
+    def get_cached_statistics():
+        """Get statistics with caching to avoid blocking"""
+        now = time.time()
+        if stats_cache['data'] is None or (now - stats_cache['timestamp']) > CACHE_TTL:
+            try:
+                stats_cache['data'] = evaluator.get_statistics()
+                stats_cache['timestamp'] = now
+            except Exception as e:
+                app.logger.error(f"Error getting statistics: {e}")
+                # Return cached data if available, otherwise return empty
+                if stats_cache['data'] is None:
+                    return {
+                        'current_balance': 0,
+                        'initial_balance': 0,
+                        'daily_pnl': 0,
+                        'roi': 0,
+                        'portfolio_win_rate': 0,
+                        'max_drawdown': 0,
+                        'total_trades': 0,
+                        'total_wins': 0,
+                        'total_losses': 0,
+                        'active_strategies': 0,
+                        'strategies': {}
+                    }
+        return stats_cache['data']
+
     @app.after_request
     def after_request(response):
         response.headers.add('Access-Control-Allow-Origin', '*')
@@ -1069,12 +1099,12 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
 
     @app.route('/statistics', methods=['GET'])
     def statistics():
-        return jsonify(evaluator.get_statistics())
+        return jsonify(get_cached_statistics())
 
     @app.route('/strategies', methods=['GET'])
     def strategies():
         """Get all strategies performance"""
-        stats = evaluator.get_statistics()
+        stats = get_cached_statistics()
         return jsonify({
             'strategies': stats.get('strategies', {}),
             'total': len(stats.get('strategies', {}))
@@ -1083,7 +1113,7 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
     @app.route('/strategy/<strategy_name>', methods=['GET'])
     def strategy_detail(strategy_name):
         """Get specific strategy details"""
-        stats = evaluator.get_statistics()
+        stats = get_cached_statistics()
         strategies = stats.get('strategies', {})
 
         if strategy_name not in strategies:
@@ -1149,7 +1179,7 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
     @app.route('/performance', methods=['GET'])
     def performance():
         """Get performance metrics (alias for /statistics for Angular dashboard compatibility)"""
-        stats = evaluator.get_statistics()
+        stats = get_cached_statistics()
         return jsonify({
             'summary': {
                 'balance': stats['current_balance'],
@@ -1256,7 +1286,7 @@ def create_health_api(evaluator: UltimateStrategyEvaluator):
     def strategy_stats():
         """Get strategy statistics (maps to /strategies)"""
         hours = request.args.get('hours', type=int)
-        stats = evaluator.get_statistics()
+        stats = get_cached_statistics()
         strategies = stats.get('strategies', {})
 
         # Convert to format expected by Angular dashboard

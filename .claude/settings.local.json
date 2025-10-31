@@ -68,7 +68,10 @@
       "Bash(npm run build:*)",
       "Bash(timeout 30 npm run build:*)",
       "Bash(timeout 5 curl:*)",
-      "Bash(timeout 15 docker logs:*)"
+      "Bash(timeout 15 docker logs:*)",
+      "Bash(timeout 3 curl:*)",
+      "Bash(timeout 60 bash -c 'while true; do clear; echo \"\"\"\"=== KAEL Dashboard Monitor - Live View ===\"\"\"\"; echo \"\"\"\"Press Ctrl+C to stop\"\"\"\"; echo \"\"\"\"\"\"\"\"; echo \"\"\"\"Timestamp: $(date)\"\"\"\"; echo \"\"\"\"\"\"\"\"; echo \"\"\"\"Dashboard Status:\"\"\"\"; curl -s -o /dev/null -w \"\"\"\"Angular (4200): HTTP %{http_code} - %{time_total}s\\n\"\"\"\" http://localhost:4200; curl -s -o /dev/null -w \"\"\"\"React (3000): HTTP %{http_code} - %{time_total}s\\n\"\"\"\" http://localhost:3000; echo \"\"\"\"\"\"\"\"; echo \"\"\"\"API Health:\"\"\"\"; curl -s http://localhost:5001/health 2>/dev/null | python -m json.tool 2>/dev/null | head -5; echo \"\"\"\"\"\"\"\"; echo \"\"\"\"Recent Strategies:\"\"\"\"; curl -s http://localhost:5001/strategies 2>/dev/null | python -m json.tool 2>/dev/null | grep -E \"\"\"\"(strategy_name|win_rate|total_trades)\"\"\"\" | head -21; echo \"\"\"\"\"\"\"\"; echo \"\"\"\"Next refresh in 10s...\"\"\"\"; sleep 10; done')",
+      "Bash(bash run_3hour_test.sh:*)"
     ],
     "deny": [],
     "ask": []

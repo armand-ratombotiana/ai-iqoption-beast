@@ -1,0 +1,95 @@
+{
+  "generated_at": "2025-10-31T08:55:31.550633",
+  "period_days": 7,
+  "accounts": [
+    {
+      "total_trades": 41,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": "0.00",
+      "total_pnl": "0.00",
+      "avg_confidence": "76.39",
+      "avg_execution_ms": "2348",
+      "account_id": "evaluation_account"
+    }
+  ],
+  "strategies": [
+    {
+      "selected_strategy": "bollinger_rsi_combo",
+      "total_trades": 2,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": "0.00",
+      "total_pnl": "0.00",
+      "avg_profit_per_trade": "0.00",
+      "avg_payout_percent": "86.50",
+      "accounts_using": 1
+    },
+    {
+      "selected_strategy": "enhanced_candle_count",
+      "total_trades": 7,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": "0.00",
+      "total_pnl": "0.00",
+      "avg_profit_per_trade": "0.00",
+      "avg_payout_percent": "86.57",
+      "accounts_using": 1
+    },
+    {
+      "selected_strategy": "macd_momentum",
+      "total_trades": 7,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": "0.00",
+      "total_pnl": "0.00",
+      "avg_profit_per_trade": "0.00",
+      "avg_payout_percent": "86.57",
+      "accounts_using": 1
+    },
+    {
+      "selected_strategy": "rsi_divergence",
+      "total_trades": 4,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": "0.00",
+      "total_pnl": "0.00",
+      "avg_profit_per_trade": "0.00",
+      "avg_payout_percent": "87.00",
+      "accounts_using": 1
+    },
+    {
+      "selected_strategy": "stochastic",
+      "total_trades": 4,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": "0.00",
+      "total_pnl": "0.00",
+      "avg_profit_per_trade": "0.00",
+      "avg_payout_percent": "86.00",
+      "accounts_using": 1
+    },
+    {
+      "selected_strategy": "support_resistance",
+      "total_trades": 9,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": "0.00",
+      "total_pnl": "0.00",
+      "avg_profit_per_trade": "0.00",
+      "avg_payout_percent": "86.44",
+      "accounts_using": 1
+    },
+    {
+      "selected_strategy": "trend_alignment",
+      "total_trades": 8,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": "0.00",
+      "total_pnl": "0.00",
+      "avg_profit_per_trade": "0.00",
+      "avg_payout_percent": "86.50",
+      "accounts_using": 1
+    }
+  ]
+}

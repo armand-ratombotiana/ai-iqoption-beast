@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  trading-system:
+    build: .
+    container_name: kael-trading-system
+    restart: unless-stopped
+
+    environment:
+      # IQOption Credentials
+      - IQOPTION_EMAIL=${IQOPTION_EMAIL}
+      - IQOPTION_PASSWORD=${IQOPTION_PASSWORD}
+      - ACCOUNT_TYPE=demo
+
+      # FREE AI Configuration
+      - USE_FREE_AI=true
+      - FREE_AI_TYPE=rule-based
+      - FREE_AI_WEIGHT=1.5
+
+      # Paid AI (disabled by default)
+      - USE_OPENAI=false
+      - USE_CLAUDE=false
+      - USE_DEEPSEEK=false
+
+      # Trading Configuration
+      - MIN_CONFIDENCE=75
+      - CONSENSUS_THRESHOLD=0.5
+      - DEFAULT_AMOUNT=10
+      - MAX_SIMULTANEOUS_TRADES=3
+      - COOLDOWN_PERIOD=180
+
+      # Risk Management
+      - MAX_DAILY_LOSS=100
+      - MAX_TRADE_AMOUNT=50
+      - MIN_TRADE_AMOUNT=1
+      - RISK_PER_TRADE=0.02
+
+      # API Keys (optional)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+
+    volumes:
+      # Persist logs
+      - ./logs:/app/logs
+      # Persist database
+      - ./database:/app/database
+      # Mount .env file (if exists)
+      - ./.env:/app/.env:ro
+
+    networks:
+      - trading-network
+
+    # Health monitoring
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+networks:
+  trading-network:
+    driver: bridge

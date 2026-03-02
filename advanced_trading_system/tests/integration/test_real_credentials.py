@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Direct Real Credentials Testing
-Tests each component with tombokael4@gmail.com / tombokael04
+Uses environment variables for credentials - set IQOPTION_EMAIL and IQOPTION_PASSWORD
 """
 
 import sys
@@ -11,9 +11,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 from datetime import datetime
 import time
 
-# Credentials
-EMAIL = "tombokael4@gmail.com"
-PASSWORD = "tombokael04"
+# SECURITY: Use environment variables instead of hardcoded credentials
+EMAIL = os.getenv("IQOPTION_EMAIL", "test@example.com")
+PASSWORD = os.getenv("IQOPTION_PASSWORD", "test_password")
 
 def print_header(title):
     print("\n" + "="*70)

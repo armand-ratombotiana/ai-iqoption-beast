@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python tests/test_error_handling.py:*)",
+      "Bash(python:*)",
+      "Bash(where:*)",
+      "Bash(python3:*)",
+      "Bash(NUL)",
+      "Bash(py:*)",
+      "Bash(tee:*)",
+      "Bash(git checkout:*)",
+      "Bash(cat:*)",
+      "Bash(/c/Users/jratombo/Desktop/dev_tools/pythonEnv/app/.venv/bin/python:*)",
+      "Bash(timeout 60 python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

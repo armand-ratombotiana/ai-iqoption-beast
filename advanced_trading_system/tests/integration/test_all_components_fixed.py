@@ -2,16 +2,18 @@
 """
 FIXED: Comprehensive Component Testing with Real Credentials
 All API compatibility issues resolved
-Tests: tombokael4@gmail.com / tombokael04
+Uses environment variables for credentials - set IQOPTION_EMAIL and IQOPTION_PASSWORD
 """
 
 from iqoptionapi.stable_api import IQ_Option
 import time
 from datetime import datetime
 import sys
+import os
 
-EMAIL = "tombokael4@gmail.com"
-PASSWORD = "tombokael04"
+# SECURITY: Use environment variables instead of hardcoded credentials
+EMAIL = os.getenv("IQOPTION_EMAIL", "test@example.com")
+PASSWORD = os.getenv("IQOPTION_PASSWORD", "test_password")
 
 def print_section(title):
     print("\n" + "="*70)

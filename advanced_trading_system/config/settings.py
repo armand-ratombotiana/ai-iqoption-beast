@@ -1,10 +1,11 @@
 """
 Trading Configuration Settings
-Centralized configuration for the trading system
+Centralized configuration for the trading system with secure secrets management
 """
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from utils.secrets_manager import SecretsManager, get_secrets_manager
 
 # Load .env file if it exists
 env_path = Path(__file__).parent.parent / '.env'
@@ -14,6 +15,9 @@ else:
     # Try loading from current directory
     load_dotenv()
 
+# Initialize secrets manager
+_secrets = get_secrets_manager(environment=os.getenv('ENVIRONMENT', 'production'))
+
 
 class TradingConfig:
     """Trading system configuration"""
@@ -21,10 +25,10 @@ class TradingConfig:
     # ========================================================================
     # Account Settings
     # ========================================================================
-    # SECURITY: Credentials must be set via environment variables
-    EMAIL = os.getenv('IQOPTION_EMAIL')
-    PASSWORD = os.getenv('IQOPTION_PASSWORD')
-    ACCOUNT_TYPE = os.getenv('ACCOUNT_TYPE', 'demo')  # 'demo' or 'real'
+    # SECURITY: Credentials managed by SecretsManager
+    EMAIL = _secrets.get_credential('IQOPTION_EMAIL')
+    PASSWORD = _secrets.get_credential('IQOPTION_PASSWORD')
+    ACCOUNT_TYPE = _secrets.get_credential('ACCOUNT_TYPE', 'demo')  # 'demo' or 'real'
 
     # ========================================================================
     # AI Model Settings
@@ -99,15 +103,18 @@ class TradingConfig:
 
     @classmethod
     def validate(cls):
-        """Validate configuration"""
+        """Validate configuration with secrets manager"""
         errors = []
 
-        # Critical: Validate required credentials
-        if not cls.EMAIL:
-            errors.append("IQOPTION_EMAIL environment variable is required")
-        if not cls.PASSWORD:
-            errors.append("IQOPTION_PASSWORD environment variable is required")
+        # Use SecretsManager for credential validation
+        try:
+            is_valid, validation_errors = _secrets.validate_credentials(raise_on_error=False)
+            if not is_valid:
+                errors.extend(validation_errors)
+        except Exception as e:
+            errors.append(f"Secrets validation error: {str(e)}")
 
+        # Validate trading parameters
         if cls.CONSENSUS_THRESHOLD < 0.5 or cls.CONSENSUS_THRESHOLD > 1.0:
             errors.append("CONSENSUS_THRESHOLD must be between 0.5 and 1.0")
 
@@ -121,42 +128,49 @@ class TradingConfig:
             errors.append("MAX_AMOUNT must be >= BASE_AMOUNT")
 
         if errors:
-            raise ValueError("Configuration errors:\n" + "\n".join(errors))
+            raise ValueError("Configuration errors:\n" + "\n".join(f"  - {e}" for e in errors))
 
         return True
 
     @classmethod
     def display(cls):
-        """Display current configuration"""
+        """Display current configuration with masked credentials"""
         print("\n" + "=" * 70)
-        print("⚙️  TRADING SYSTEM CONFIGURATION")
+        print("TRADING SYSTEM CONFIGURATION")
         print("=" * 70)
 
-        print(f"\n📧 Account:")
+        # Display account info with masked credentials
+        print(f"\nAccount:")
         print(f"   Type: {cls.ACCOUNT_TYPE.upper()}")
-        print(f"   Email: {cls.EMAIL}")
+        masked_email = _secrets.mask_for_logging(cls.EMAIL) if cls.EMAIL else "NOT SET"
+        print(f"   Email: {masked_email}")
 
-        print(f"\n🤖 AI Models:")
-        print(f"   Free AI: {'✅' if cls.USE_FREE_AI else '❌'} (weight: {cls.FREE_AI_WEIGHT}) - {cls.FREE_AI_TYPE}")
-        print(f"   OpenAI: {'✅' if cls.USE_OPENAI else '❌'} (weight: {cls.OPENAI_WEIGHT})")
-        print(f"   Claude: {'✅' if cls.USE_CLAUDE else '❌'} (weight: {cls.CLAUDE_WEIGHT})")
-        print(f"   DeepSeek: {'✅' if cls.USE_DEEPSEEK else '❌'} (weight: {cls.DEEPSEEK_WEIGHT})")
+        print(f"\nAI Models:")
+        print(f"   Free AI: {'ENABLED' if cls.USE_FREE_AI else 'DISABLED'} (weight: {cls.FREE_AI_WEIGHT}) - {cls.FREE_AI_TYPE}")
+        print(f"   OpenAI: {'ENABLED' if cls.USE_OPENAI else 'DISABLED'} (weight: {cls.OPENAI_WEIGHT})")
+        print(f"   Claude: {'ENABLED' if cls.USE_CLAUDE else 'DISABLED'} (weight: {cls.CLAUDE_WEIGHT})")
+        print(f"   DeepSeek: {'ENABLED' if cls.USE_DEEPSEEK else 'DISABLED'} (weight: {cls.DEEPSEEK_WEIGHT})")
 
-        print(f"\n🎯 Consensus:")
+        print(f"\nConsensus:")
         print(f"   Threshold: {cls.CONSENSUS_THRESHOLD * 100:.0f}%")
         print(f"   Min Confidence: {cls.MIN_CONFIDENCE}%")
 
-        print(f"\n💰 Trading:")
+        print(f"\nTrading:")
         print(f"   Base Amount: ${cls.BASE_AMOUNT}")
         print(f"   Range: ${cls.MIN_AMOUNT} - ${cls.MAX_AMOUNT}")
         print(f"   Default Duration: {cls.DEFAULT_DURATION}m")
 
-        print(f"\n🛡️  Risk Management:")
+        print(f"\nRisk Management:")
         print(f"   Max Daily Loss: ${cls.MAX_DAILY_LOSS}")
         print(f"   Max Daily Profit: ${cls.MAX_DAILY_PROFIT}")
         print(f"   Max Consecutive Losses: {cls.MAX_CONSECUTIVE_LOSSES}")
 
-        print(f"\n💾 Database:")
+        print(f"\nDatabase:")
         print(f"   Path: {cls.DB_PATH}")
 
         print("\n" + "=" * 70)
+
+    @classmethod
+    def get_secrets_manager(cls) -> SecretsManager:
+        """Get the secrets manager instance"""
+        return _secrets

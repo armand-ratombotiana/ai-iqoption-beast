@@ -798,11 +798,15 @@ class RobustTradingSystem:
         try:
             if not self.api:
                 return False
-            
+
             # Try to get balance as health check
             balance = self.api.get_balance()
             return balance is not None
-        except:
+        except (ConnectionError, TimeoutError, OSError) as e:
+            self.logger.warning(f"Connection health check failed: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error in connection health check: {e}", exc_info=True)
             return False
     
     def get_market_data(self, pair: str) -> Optional[Dict]:
@@ -984,8 +988,10 @@ class RobustTradingSystem:
                     profit = self.api.check_win_v3(order_id)
                     if profit is not None:
                         break
-                except:
-                    pass
+                except (ConnectionError, TimeoutError, ValueError) as e:
+                    self.logger.debug(f"Attempt {attempt + 1}/20 to get result failed: {e}")
+                except Exception as e:
+                    self.logger.warning(f"Unexpected error checking trade result (attempt {attempt + 1}/20): {e}")
                 time.sleep(0.5)
             
             if profit is not None:
